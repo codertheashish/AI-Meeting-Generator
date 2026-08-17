@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log In — AI Meeting Notes</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
+</head>
+<body class="auth-body">
+
+<div id="toast-container" class="toast-container"></div>
+
+<div class="auth-page">
+  <div class="auth-dots"></div>
+
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="logo-icon"><i class="fa-solid fa-waveform-lines"></i></div>
+      <span>AI Meeting Notes</span>
+    </div>
+
+    <h1>Log In</h1>
+
+    <div class="oauth-buttons">
+      {% if providers.google %}
+      <a href="{{ url_for('auth.oauth_start', provider='google') }}" class="btn-oauth">
+        <i class="fa-brands fa-google"></i> Log in with Google
+      </a>
+      {% endif %}
+      {% if providers.linkedin %}
+      <a href="{{ url_for('auth.oauth_start', provider='linkedin') }}" class="btn-oauth">
+        <i class="fa-brands fa-linkedin"></i> Log in with LinkedIn
+      </a>
+      {% endif %}
+      {% if providers.github %}
+      <a href="{{ url_for('auth.oauth_start', provider='github') }}" class="btn-oauth">
+        <i class="fa-brands fa-github"></i> Log in with GitHub
+      </a>
+      {% endif %}
+    </div>
+
+    {% if providers.google or providers.linkedin or providers.github %}
+    <div class="auth-divider"><span>Or log in with email</span></div>
+    {% endif %}
+
+    <form id="login-form" novalidate>
+      <label for="email">Email*</label>
+      <input type="email" id="email" name="email" required autocomplete="email">
+
+      <label for="password">Password*</label>
+      <div class="password-field">
+        <input type="password" id="password" name="password" required autocomplete="current-password">
+        <button type="button" class="toggle-password" id="toggle-password" tabindex="-1"><i class="fa-regular fa-eye"></i></button>
+      </div>
+
+      <div class="auth-links-row">
+        <a href="{{ url_for('auth.forgot_password_page') }}">Forgot password?</a>
+      </div>
+
+      <button type="submit" class="btn btn-primary auth-submit" id="login-submit">Log In</button>
+    </form>
+
+    <p class="auth-footer-text">Don't have an account? <a href="{{ url_for('auth.signup_page') }}">Sign up</a></p>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+<script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+</body>
+</html>

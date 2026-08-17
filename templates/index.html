@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Meeting Generator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css') }}">
+</head>
+<body>
+
+<!-- Toast container for errors / status messages -->
+<div id="toast-container" class="toast-container"></div>
+
+<!-- Persistent config warning banner (shown if FFmpeg/OpenRouter aren't set up) -->
+<div id="config-banner" class="config-banner hidden"></div>
+
+<!-- ========== HEADER ========== -->
+<header class="app-header">
+  <div class="header-inner">
+    <div class="logo">
+      <span>AI Meeting Generator</span>
+    </div>
+    <nav class="main-nav" id="main-nav">
+      <a href="#dashboard" class="nav-link active" data-view="dashboard">Dashboard</a>
+      <a href="#notes" class="nav-link" data-view="notes">Notes</a>
+      <a href="#meetings" class="nav-link" data-view="meetings">Meetings</a>
+      <a href="#settings" class="nav-link" data-view="settings">Settings</a>
+    </nav>
+    <div class="user-section">
+      <div class="notif-wrapper">
+        <button class="icon-btn" id="notif-btn" title="Notifications"><i class="fa-regular fa-bell"></i></button>
+        <div class="dropdown-panel hidden" id="notif-dropdown">
+          <p class="empty-state">No new notifications.</p>
+        </div>
+      </div>
+      {% if user.is_authenticated %}
+      <div class="notif-wrapper">
+        <button class="avatar" id="avatar-btn" title="Account">
+          {% if user.avatar_url %}<img src="{{ user.avatar_url }}" alt="{{ user.name }}">{% else %}{{ (user.name or 'U')[0]|upper }}{% endif %}
+        </button>
+        <div class="dropdown-panel hidden" id="avatar-dropdown">
+          <div class="dropdown-user-info">
+            <div class="dropdown-user-name">{{ user.name }}</div>
+            <div class="dropdown-user-email">{{ user.email }}</div>
+          </div>
+          <a href="#settings" class="dropdown-item" data-view="settings"><i class="fa-solid fa-gear"></i> Settings</a>
+          <a href="https://github.com" target="_blank" rel="noopener" class="dropdown-item"><i class="fa-brands fa-github"></i> View on GitHub</a>
+          <a href="{{ url_for('auth.logout') }}" class="dropdown-item dropdown-item-danger"><i class="fa-solid fa-right-from-bracket"></i> Log Out</a>
+        </div>
+      </div>
+      {% else %}
+      <a href="{{ url_for('auth.login_page') }}" class="btn btn-outline header-login-btn">Log In</a>
+      {% endif %}
+    </div>
+    <button class="mobile-menu-btn" id="mobile-menu-btn"><i class="fa-solid fa-bars"></i></button>
+  </div>
+</header>
+
+<main class="app-main">
+
+  <!-- ========== HERO ========== -->
+  <section class="hero" id="dashboard-top">
+    <h1>AI Meeting Generator</h1>
+    <p class="hero-subtitle">Turn your meetings into clear, actionable notes in minutes.</p>
+    <div class="hero-actions">
+      <button class="btn btn-primary" id="hero-start-recording"><i class="fa-solid fa-microphone"></i> Start Recording</button>
+      <button class="btn btn-secondary" id="hero-upload-meeting"><i class="fa-solid fa-upload"></i> Upload Meeting</button>
+    </div>
+  </section>
+
+  <!-- ========== ACTIVE MEETING TITLE BAR ========== -->
+  <div class="meeting-title-bar hidden" id="meeting-title-bar">
+    <div class="meeting-title-display" id="meeting-title-display">
+      <i class="fa-solid fa-file-signature"></i>
+      <span id="meeting-title-text">Untitled Meeting</span>
+      <button class="icon-btn-sm" id="edit-title-btn" title="Rename this meeting"><i class="fa-solid fa-pen"></i></button>
+    </div>
+    <div class="meeting-title-edit hidden" id="meeting-title-edit">
+      <input type="text" id="meeting-title-input" maxlength="150" placeholder="Enter a meeting title">
+      <button class="btn btn-primary" id="save-title-btn">Save</button>
+      <button class="btn btn-ghost" id="cancel-title-btn">Cancel</button>
+    </div>
+  </div>
+
+  <div class="dashboard-grid">
+
+    <!-- ========== RECORDING CARD ========== -->
+    <section class="card recording-card" id="recording-card">
+      <div class="card-header">
+        <h2><i class="fa-solid fa-circle-dot"></i> Meeting Recording</h2>
+        <span class="status-pill" id="recording-status">Ready</span>
+      </div>
+
+      <div class="recording-body">
+        <div class="mic-wrapper">
+          <button class="mic-btn" id="mic-btn" title="Start Recording">
+            <i class="fa-solid fa-microphone"></i>
+          </button>
+          <div class="pulse-ring" id="pulse-ring"></div>
+        </div>
+
+        <div class="timer" id="recording-timer">00:00:00</div>
+
+        <canvas id="waveform" class="waveform" height="70"></canvas>
+
+        <div class="recording-controls">
+          <button class="btn btn-primary" id="start-recording-btn"><i class="fa-solid fa-play"></i> Start Recording</button>
+          <button class="btn btn-outline hidden" id="pause-recording-btn"><i class="fa-solid fa-pause"></i> Pause</button>
+          <button class="btn btn-danger hidden" id="stop-recording-btn"><i class="fa-solid fa-stop"></i> Stop</button>
+          <button class="btn btn-ghost hidden" id="delete-recording-btn"><i class="fa-solid fa-trash"></i> Delete</button>
+        </div>
+
+        <div class="upload-divider"><span>or</span></div>
+
+        <label class="upload-dropzone" id="upload-dropzone">
+          <i class="fa-solid fa-cloud-arrow-up"></i>
+          <span>Click or drag an audio/video file to upload</span>
+          <input type="file" id="file-input" accept="audio/*,video/*" hidden>
+        </label>
+      </div>
+    </section>
+
+    <!-- ========== LIVE TRANSCRIPTION ========== -->
+    <section class="card transcription-card" id="transcription-card">
+      <div class="card-header">
+        <h2><i class="fa-solid fa-closed-captioning"></i> Live Transcription</h2>
+        <span class="badge" id="transcription-badge">Idle</span>
+      </div>
+      <div class="transcription-table-wrapper">
+        <table class="transcription-table">
+          <thead>
+            <tr><th>Timestamp</th><th>Speaker</th><th>Transcript</th></tr>
+          </thead>
+          <tbody id="transcription-body">
+            <tr class="empty-row"><td colspan="3">No transcription yet. Record or upload a meeting to get started.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ========== AI NOTES: SUMMARY ========== -->
+    <section class="card notes-card" id="summary-card">
+      <div class="card-header">
+        <h2><i class="fa-solid fa-file-lines"></i> Summary</h2>
+      </div>
+      <p class="summary-text" id="summary-text">Your AI-generated summary will appear here after processing.</p>
+    </section>
+
+    <!-- ========== ACTION ITEMS ========== -->
+    <section class="card notes-card" id="action-items-card">
+      <div class="card-header">
+        <h2><i class="fa-solid fa-list-check"></i> Action Items</h2>
+      </div>
+      <ul class="action-items-list" id="action-items-list">
+        <li class="empty-state">No action items yet.</li>
+      </ul>
+    </section>
+
+    <!-- ========== KEY HIGHLIGHTS ========== -->
+    <section class="card notes-card" id="highlights-card">
+      <div class="card-header">
+        <h2><i class="fa-solid fa-star"></i> Key Highlights</h2>
+      </div>
+      <ul class="bullet-list" id="highlights-list">
+        <li class="empty-state">No highlights yet.</li>
+      </ul>
+    </section>
+
+    <!-- ========== DECISIONS ========== -->
+    <section class="card notes-card" id="decisions-card">
+      <div class="card-header">
+        <h2><i class="fa-solid fa-gavel"></i> Decisions Made</h2>
+      </div>
+      <ul class="bullet-list" id="decisions-list">
+        <li class="empty-state">No decisions yet.</li>
+      </ul>
+    </section>
+
+    <!-- ========== FOLLOW-UP POINTS ========== -->
+    <section class="card notes-card" id="followups-card">
+      <div class="card-header">
+        <h2><i class="fa-solid fa-arrow-turn-up"></i> Follow-up Points</h2>
+      </div>
+      <ul class="bullet-list" id="followups-list">
+        <li class="empty-state">No follow-up points yet.</li>
+      </ul>
+    </section>
+
+    <!-- ========== ANALYSIS STATUS / RETRY ========== -->
+    <section class="card notes-card hidden" id="analysis-error-card">
+      <div class="card-header">
+        <h2><i class="fa-solid fa-triangle-exclamation"></i> Analysis Failed</h2>
+      </div>
+      <p class="summary-text" id="analysis-error-text">Something went wrong generating notes.</p>
+      <button class="btn btn-primary" id="retry-analysis-btn" style="margin-top:14px;">
+        <i class="fa-solid fa-rotate-right"></i> Retry Analysis
+      </button>
+    </section>
+
+    <!-- ========== SPEAKER ANALYTICS ========== -->
+    <section class="card speakers-card" id="speakers-card">
+      <div class="card-header">
+        <h2><i class="fa-solid fa-users"></i> Speakers</h2>
+      </div>
+      <div class="speakers-list" id="speakers-list">
+        <p class="empty-state">Speaker analytics will appear after transcription.</p>
+      </div>
+    </section>
+
+    <!-- ========== EXPORT & SHARE ========== -->
+    <section class="card export-card" id="export-card">
+      <div class="card-header">
+        <h2><i class="fa-solid fa-share-nodes"></i> Export &amp; Share</h2>
+      </div>
+      <div class="export-buttons">
+        <button class="btn btn-outline" id="copy-notes-btn"><i class="fa-regular fa-copy"></i> Copy Notes</button>
+        <button class="btn btn-outline" id="download-pdf-btn"><i class="fa-regular fa-file-pdf"></i> Download PDF</button>
+        <button class="btn btn-outline" id="download-docx-btn"><i class="fa-regular fa-file-word"></i> Download DOCX</button>
+        <button class="btn btn-outline" id="download-txt-btn"><i class="fa-regular fa-file-lines"></i> Download TXT</button>
+      </div>
+
+      <div class="email-preview">
+        <div class="email-field"><label>To:</label><input type="email" id="email-to-input" placeholder="teammate@example.com"></div>
+        <div class="email-field"><label>Subject:</label><span id="email-subject">Meeting Notes - Project Sync</span></div>
+        <div class="email-body" id="email-body-preview">
+          Hello Team,<br><br>
+          Please find the meeting notes for today's project sync attached.<br><br>
+          Thanks,<br>AI Meeting Generator
+        </div>
+        <button class="btn btn-primary" id="send-email-btn"><i class="fa-regular fa-paper-plane"></i> Send Email</button>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ========== HOW IT WORKS ========== -->
+  <section class="how-it-works">
+    <h2>How It Works</h2>
+    <div class="steps-vertical">
+      <div class="step">
+        <div class="step-number">1</div>
+        <div class="step-content"><h3>Record or Upload</h3><p>Record live meeting or upload audio/video.</p></div>
+      </div>
+      <div class="step">
+        <div class="step-number">2</div>
+        <div class="step-content"><h3>Transcribe</h3><p>Convert speech into accurate text using Whisper.</p></div>
+      </div>
+      <div class="step">
+        <div class="step-number">3</div>
+        <div class="step-content"><h3>Analyze</h3><p>Analyze the conversation using AI.</p></div>
+      </div>
+      <div class="step">
+        <div class="step-number">4</div>
+        <div class="step-content"><h3>Generate Notes</h3><p>Generate summary, action items, highlights and decisions.</p></div>
+      </div>
+      <div class="step">
+        <div class="step-number">5</div>
+        <div class="step-content"><h3>Export &amp; Share</h3><p>Download or share meeting notes.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== MEETING HISTORY (Meetings view) ========== -->
+  <section class="card history-card" id="history-card">
+    <div class="card-header">
+      <h2><i class="fa-solid fa-clock-rotate-left"></i> Meeting History</h2>
+    </div>
+    <div class="history-list" id="history-list">
+      <p class="empty-state">No past meetings yet.</p>
+    </div>
+  </section>
+
+  <!-- ========== SETTINGS ========== -->
+  <section class="card settings-card" id="settings-card">
+    <div class="card-header">
+      <h2><i class="fa-solid fa-gear"></i> Settings</h2>
+    </div>
+    <div class="settings-grid" id="settings-grid">
+      <p class="empty-state">Loading configuration…</p>
+    </div>
+  </section>
+
+</main>
+
+<!-- Global loading overlay -->
+<div class="loading-overlay hidden" id="loading-overlay">
+  <div class="spinner"></div>
+  <p id="loading-message">Processing...</p>
+</div>
+
+<script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+<script src="{{ url_for('static', filename='js/settings.js') }}"></script>
+<script src="{{ url_for('static', filename='js/recorder.js') }}"></script>
+<script src="{{ url_for('static', filename='js/transcription.js') }}"></script>
+<script src="{{ url_for('static', filename='js/notes.js') }}"></script>
+<script src="{{ url_for('static', filename='js/export.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

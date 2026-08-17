@@ -1,0 +1,48 @@
+/* ---------- Tablet ---------- */
+@media (max-width: 1024px) {
+  .dashboard-grid { grid-template-columns: 1fr; }
+  .recording-card, .transcription-card { grid-column: span 1; }
+  .header-inner { padding: 14px 20px; }
+  .hero { padding: 44px 20px 32px; }
+  .hero h1 { font-size: 32px; }
+  .how-it-works, .dashboard-grid { padding-left: 20px; padding-right: 20px; }
+  .history-card { margin-left: 20px; margin-right: 20px; }
+}
+
+/* ---------- Mobile ---------- */
+@media (max-width: 680px) {
+  .main-nav { display: none; }
+  .main-nav.open {
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    top: 100%; left: 0; right: 0;
+    background: #fff;
+    border-bottom: 1px solid var(--border);
+    padding: 10px 20px 16px;
+    gap: 4px;
+  }
+  .mobile-menu-btn { display: block; }
+  .header-inner { position: relative; }
+
+  .hero h1 { font-size: 26px; }
+  .hero-subtitle { font-size: 15px; }
+  .hero-actions { flex-direction: column; align-items: stretch; }
+  .hero-actions .btn { justify-content: center; }
+
+  .card { padding: 18px; }
+  .mic-btn { width: 68px; height: 68px; font-size: 24px; }
+  .pulse-ring { width: 92px; height: 92px; }
+  .timer { font-size: 26px; }
+
+  .recording-controls { flex-direction: column; width: 100%; }
+  .recording-controls .btn { justify-content: center; width: 100%; }
+
+  .export-buttons { flex-direction: column; }
+  .export-buttons .btn { justify-content: center; }
+
+  .transcription-table { font-size: 12.5px; }
+  .transcription-table td, .transcription-table th { padding: 8px; }
+
+  .history-item { flex-direction: column; align-items: flex-start; }
+}
