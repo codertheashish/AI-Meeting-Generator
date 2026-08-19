@@ -315,3 +315,17 @@ The app handles and surfaces clear, user-friendly messages for:
 - **"Log in with Google/LinkedIn/GitHub" button doesn't appear** — that provider's `CLIENT_ID`/`CLIENT_SECRET` aren't set yet, or you haven't redeployed since adding them.
 - **OAuth redirects back with an error** — double-check the redirect URI registered with the provider exactly matches `https://<your-app>.vercel.app/auth/<provider>/callback`, and that `APP_URL` matches your real deployment URL.
 - **My old meetings disappeared after this update** — if you're migrating from the local-SQLite version, meeting data does not automatically transfer to Postgres; this is a fresh database.
+
+## 👨‍💻 Author
+
+### Ashish Kumar Prajapati
+
+- GitHub :
+[codertheashish](https://github.com/codertheashish)
+- LinkedIn :
+[codertheashish](https://www.linkedin.com/in/codertheashish/)
+- Instagram :
+[codertheashish](https://www.instagram.com/codertheashish/)
+---
+
+⭐ If you like this project, don't forget to give it a ⭐ on GitHub.
