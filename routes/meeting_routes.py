@@ -9,7 +9,7 @@ from flask import Blueprint, jsonify, request
 
 from extensions import current_user_id
 from models import database as db
-from services import audio_service
+from services import whisper_service
 
 meeting_bp = Blueprint("meetings", __name__)
 
@@ -18,16 +18,17 @@ meeting_bp = Blueprint("meetings", __name__)
 def get_settings():
     """
     Read-only view of the app's current configuration, for the Settings
-    panel in the UI. Never returns the actual API key - only whether one
-    is configured - since secrets must stay backend-only.
+    panel in the UI. Never returns actual secret values - only whether
+    each is configured - since secrets must stay backend-only.
     """
     return jsonify({
-        "whisper_model": os.getenv("WHISPER_MODEL", "small"),
-        "whisper_device": os.getenv("WHISPER_DEVICE", "cpu"),
+        "database_configured": bool(os.getenv("DATABASE_URL")),
+        "blob_storage_configured": bool(os.getenv("BLOB_READ_WRITE_TOKEN")),
+        "whisper_model": os.getenv("HOSTED_WHISPER_MODEL", "whisper-large-v3"),
+        "whisper_key_configured": whisper_service.is_configured(),
         "openrouter_model": os.getenv("OPENROUTER_MODEL", "openrouter/free"),
         "openrouter_key_configured": bool(os.getenv("OPENROUTER_API_KEY")),
         "mail_configured": bool(os.getenv("MAIL_USERNAME") and os.getenv("MAIL_PASSWORD")),
-        "ffmpeg_available": audio_service.is_ffmpeg_available(),
     })
 
 

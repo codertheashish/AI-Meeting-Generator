@@ -162,7 +162,7 @@ const App = (() => {
     Transcription.setBadge("Transcribing...");
 
     try {
-      UI.showLoading("Transcribing audio locally with Faster-Whisper...");
+      UI.showLoading("Transcribing audio...");
       const transcribeResult = await Api.transcribe(meetingId);
       Transcription.render(transcribeResult.transcript_rows);
       Notes.renderSpeakers(transcribeResult.speakers);

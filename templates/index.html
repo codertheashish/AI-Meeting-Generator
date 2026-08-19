@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI Meeting Generator</title>
+<title>AI Meeting Notes Generator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -16,19 +16,20 @@
 <!-- Toast container for errors / status messages -->
 <div id="toast-container" class="toast-container"></div>
 
-<!-- Persistent config warning banner (shown if FFmpeg/OpenRouter aren't set up) -->
+<!-- Persistent config warning banner (shown if required env vars aren't set) -->
 <div id="config-banner" class="config-banner hidden"></div>
 
 <!-- ========== HEADER ========== -->
 <header class="app-header">
   <div class="header-inner">
     <div class="logo">
-      <span>AI Meeting Generator</span>
+      <div class="logo-icon"><i class="fa-solid fa-waveform-lines"></i></div>
+      <span>AI Meeting Notes</span>
     </div>
     <nav class="main-nav" id="main-nav">
       <a href="#dashboard" class="nav-link active" data-view="dashboard">Dashboard</a>
-      <a href="#notes" class="nav-link" data-view="notes">Notes</a>
       <a href="#meetings" class="nav-link" data-view="meetings">Meetings</a>
+      <a href="#notes" class="nav-link" data-view="notes">Notes</a>
       <a href="#settings" class="nav-link" data-view="settings">Settings</a>
     </nav>
     <div class="user-section">
@@ -65,7 +66,7 @@
 
   <!-- ========== HERO ========== -->
   <section class="hero" id="dashboard-top">
-    <h1>AI Meeting Generator</h1>
+    <h1>AI Meeting Notes Generator</h1>
     <p class="hero-subtitle">Turn your meetings into clear, actionable notes in minutes.</p>
     <div class="hero-actions">
       <button class="btn btn-primary" id="hero-start-recording"><i class="fa-solid fa-microphone"></i> Start Recording</button>
@@ -230,7 +231,7 @@
         <div class="email-body" id="email-body-preview">
           Hello Team,<br><br>
           Please find the meeting notes for today's project sync attached.<br><br>
-          Thanks,<br>AI Meeting Generator
+          Thanks,<br>AI Meeting Notes Generator
         </div>
         <button class="btn btn-primary" id="send-email-btn"><i class="fa-regular fa-paper-plane"></i> Send Email</button>
       </div>

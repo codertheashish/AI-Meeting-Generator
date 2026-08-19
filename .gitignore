@@ -2,10 +2,6 @@
 venv/
 __pycache__/
 *.pyc
-database/*.db
-uploads/*
-!uploads/.gitkeep
-exports/*
-!exports/.gitkeep
 .DS_Store
 *.log
+.vercel

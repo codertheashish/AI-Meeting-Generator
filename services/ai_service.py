@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "openrouter/free"
-REQUEST_TIMEOUT_SECONDS = 90
+REQUEST_TIMEOUT_SECONDS = 45  # stay under Vercel's function timeout (see vercel.json's maxDuration) so a slow provider fails with our own clear error instead of a generic platform timeout
 
 SYSTEM_PROMPT = (
     "You are an expert meeting-minutes assistant. Analyze the following meeting "

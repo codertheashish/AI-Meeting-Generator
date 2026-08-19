@@ -1,9 +1,13 @@
 """
 Generates downloadable meeting-notes documents: TXT, DOCX, PDF.
-Each function returns the absolute path to the generated file.
+
+Each function returns an in-memory io.BytesIO buffer rather than a file
+path, so nothing ever touches disk - Vercel's serverless filesystem is
+read-only outside /tmp, and there's no reason to write a temp file at all
+when the content can be streamed straight back to the client via
+Flask's send_file(buffer, ...).
 """
-import os
-from datetime import datetime
+import io
 
 from docx import Document
 from docx.shared import Pt, RGBColor
@@ -19,9 +23,8 @@ def _build_sections(meeting):
     return participants, action_items, highlights, decisions, follow_ups
 
 
-def export_txt(meeting, export_dir):
-    os.makedirs(export_dir, exist_ok=True)
-    path = os.path.join(export_dir, f"meeting_{meeting['id']}_notes.txt")
+def export_txt(meeting):
+    """Returns an io.BytesIO containing the plain-text notes (UTF-8 encoded)."""
     participants, action_items, highlights, decisions, follow_ups = _build_sections(meeting)
 
     lines = [
@@ -57,15 +60,13 @@ def export_txt(meeting, export_dir):
 
     lines += ["", "FULL TRANSCRIPT", "---------------", meeting.get("transcript", "") or "N/A"]
 
-    with open(path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+    buffer = io.BytesIO("\n".join(lines).encode("utf-8"))
+    buffer.seek(0)
+    return buffer
 
-    return path
 
-
-def export_docx(meeting, export_dir):
-    os.makedirs(export_dir, exist_ok=True)
-    path = os.path.join(export_dir, f"meeting_{meeting['id']}_notes.docx")
+def export_docx(meeting):
+    """Returns an io.BytesIO containing the generated .docx file."""
     participants, action_items, highlights, decisions, follow_ups = _build_sections(meeting)
 
     doc = Document()
@@ -121,8 +122,10 @@ def export_docx(meeting, export_dir):
     for run in transcript_para.runs:
         run.font.size = Pt(9)
 
-    doc.save(path)
-    return path
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
 
 
 class _NotesPDF(FPDF):
@@ -143,9 +146,8 @@ class _NotesPDF(FPDF):
         self.ln(2)
 
 
-def export_pdf(meeting, export_dir):
-    os.makedirs(export_dir, exist_ok=True)
-    path = os.path.join(export_dir, f"meeting_{meeting['id']}_notes.pdf")
+def export_pdf(meeting):
+    """Returns an io.BytesIO containing the generated .pdf file."""
     participants, action_items, highlights, decisions, follow_ups = _build_sections(meeting)
 
     pdf = _NotesPDF()
@@ -171,8 +173,9 @@ def export_pdf(meeting, export_dir):
     pdf.section("Follow-up Points", _latin1("\n".join(f"- {f}" for f in follow_ups) or "No follow-up points recorded."))
     pdf.section("Full Transcript", _latin1(meeting.get("transcript", "") or "N/A"))
 
-    pdf.output(path)
-    return path
+    buffer = io.BytesIO(pdf.output())
+    buffer.seek(0)
+    return buffer
 
 
 def _latin1(text):

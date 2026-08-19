@@ -4,6 +4,10 @@ Downloaded/emailed filenames use the meeting's own title (e.g.
 "Project_Sync_Notes.pdf") instead of a generic "meeting_<id>_notes.pdf" -
 renaming a meeting (PATCH /api/meetings/<id> with {"title": "..."}) changes
 what the exported file is called too.
+
+Files are generated entirely in memory (see services/export_service.py)
+and streamed straight to the client - nothing is written to disk, since
+Vercel's serverless filesystem doesn't support that.
 """
 import os
 import re
@@ -18,10 +22,6 @@ from models import database as db
 from services import export_service
 
 export_bp = Blueprint("export", __name__)
-
-
-def _export_dir():
-    return current_app.config["EXPORT_DIR"]
 
 
 def _get_meeting_or_404(meeting_id):
@@ -43,11 +43,12 @@ def export_pdf(meeting_id):
     if not meeting:
         return jsonify({"error": "Meeting not found."}), 404
     try:
-        path = export_service.export_pdf(meeting, _export_dir())
+        buffer = export_service.export_pdf(meeting)
     except Exception:  # noqa: BLE001
         current_app.logger.error(traceback.format_exc())
         return jsonify({"error": "Failed to generate PDF."}), 500
-    return send_file(path, as_attachment=True, download_name=_download_filename(meeting, "pdf"))
+    return send_file(buffer, mimetype="application/pdf", as_attachment=True,
+                      download_name=_download_filename(meeting, "pdf"))
 
 
 @export_bp.route("/api/export/docx/<int:meeting_id>", methods=["GET"])
@@ -56,11 +57,15 @@ def export_docx(meeting_id):
     if not meeting:
         return jsonify({"error": "Meeting not found."}), 404
     try:
-        path = export_service.export_docx(meeting, _export_dir())
+        buffer = export_service.export_docx(meeting)
     except Exception:  # noqa: BLE001
         current_app.logger.error(traceback.format_exc())
         return jsonify({"error": "Failed to generate DOCX."}), 500
-    return send_file(path, as_attachment=True, download_name=_download_filename(meeting, "docx"))
+    return send_file(
+        buffer,
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        as_attachment=True, download_name=_download_filename(meeting, "docx"),
+    )
 
 
 @export_bp.route("/api/export/txt/<int:meeting_id>", methods=["GET"])
@@ -69,11 +74,12 @@ def export_txt(meeting_id):
     if not meeting:
         return jsonify({"error": "Meeting not found."}), 404
     try:
-        path = export_service.export_txt(meeting, _export_dir())
+        buffer = export_service.export_txt(meeting)
     except Exception:  # noqa: BLE001
         current_app.logger.error(traceback.format_exc())
         return jsonify({"error": "Failed to generate TXT."}), 500
-    return send_file(path, as_attachment=True, download_name=_download_filename(meeting, "txt"))
+    return send_file(buffer, mimetype="text/plain", as_attachment=True,
+                      download_name=_download_filename(meeting, "txt"))
 
 
 @export_bp.route("/api/email", methods=["POST"])
@@ -102,13 +108,13 @@ def send_email():
     sender = os.getenv("MAIL_DEFAULT_SENDER", mail_username)
 
     if not mail_username or not mail_password:
-        return jsonify({"error": "Email is not configured. Set MAIL_USERNAME and MAIL_PASSWORD in .env."}), 500
+        return jsonify({"error": "Email is not configured. Set MAIL_USERNAME and MAIL_PASSWORD in your environment variables."}), 500
 
     try:
         exporters = {"pdf": export_service.export_pdf, "docx": export_service.export_docx, "txt": export_service.export_txt}
         if fmt not in exporters:
             return jsonify({"error": "format must be one of: pdf, docx, txt"}), 400
-        attachment_path = exporters[fmt](meeting, _export_dir())
+        buffer = exporters[fmt](meeting)
         attachment_filename = _download_filename(meeting, fmt)
 
         msg = EmailMessage()
@@ -122,8 +128,7 @@ def send_email():
             f"Thanks,\nAI Meeting Notes Generator"
         )
 
-        with open(attachment_path, "rb") as f:
-            file_data = f.read()
+        file_data = buffer.read()
         mime_map = {"pdf": ("application", "pdf"), "docx": ("application", "vnd.openxmlformats-officedocument.wordprocessingml.document"), "txt": ("text", "plain")}
         maintype, subtype = mime_map[fmt]
         msg.add_attachment(file_data, maintype=maintype, subtype=subtype, filename=attachment_filename)
