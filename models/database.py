@@ -44,8 +44,6 @@ def init_db():
             email TEXT NOT NULL UNIQUE,
             name TEXT NOT NULL DEFAULT '',
             password_hash TEXT,
-            oauth_provider TEXT,
-            oauth_id TEXT,
             avatar_url TEXT,
             created_at TEXT NOT NULL
         )
@@ -127,13 +125,13 @@ def _now():
 # User helpers
 # ---------------------------------------------------------------------------
 
-def create_user(email, name="", password_hash=None, oauth_provider=None, oauth_id=None, avatar_url=None):
+def create_user(email, name="", password_hash=None, avatar_url=None):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO users (email, name, password_hash, oauth_provider, oauth_id, avatar_url, created_at) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
-        (email.lower().strip(), name, password_hash, oauth_provider, oauth_id, avatar_url, _now()),
+        "INSERT INTO users (email, name, password_hash, avatar_url, created_at) "
+        "VALUES (%s, %s, %s, %s, %s) RETURNING id",
+        (email.lower().strip(), name, password_hash, avatar_url, _now()),
     )
     user_id = cur.fetchone()["id"]
     conn.commit()
@@ -162,32 +160,10 @@ def get_user_by_email(email):
     return dict(row) if row else None
 
 
-def get_user_by_oauth(provider, oauth_id):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM users WHERE oauth_provider = %s AND oauth_id = %s", (provider, oauth_id))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    return dict(row) if row else None
-
-
 def update_user_password(user_id, password_hash):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user_id))
-    conn.commit()
-    cur.close()
-    conn.close()
-
-
-def link_oauth_to_user(user_id, provider, oauth_id, avatar_url=None):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "UPDATE users SET oauth_provider = %s, oauth_id = %s, avatar_url = COALESCE(%s, avatar_url) WHERE id = %s",
-        (provider, oauth_id, avatar_url, user_id),
-    )
     conn.commit()
     cur.close()
     conn.close()

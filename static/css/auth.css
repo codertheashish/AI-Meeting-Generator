@@ -64,43 +64,6 @@
 .auth-card h1 { font-size: 26px; font-weight: 800; margin-bottom: 22px; }
 .auth-card p.auth-subtitle { color: var(--text-secondary); font-size: 14.5px; margin: -14px 0 22px; }
 
-.oauth-buttons { display: flex; flex-direction: column; gap: 12px; margin-bottom: 4px; }
-.btn-oauth {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 12px 18px;
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-weight: 600;
-  font-size: 14.5px;
-  color: var(--text-primary);
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-.btn-oauth:hover { border-color: var(--purple-500); background: #faf9ff; }
-.btn-oauth i.fa-google { color: #ea4335; }
-.btn-oauth i.fa-linkedin { color: #0a66c2; }
-.btn-oauth i.fa-github { color: #181717; }
-
-.oauth-empty-note {
-  font-size: 13px;
-  color: var(--text-muted);
-  background: #f9fafb;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 12px 14px;
-  line-height: 1.6;
-}
-.oauth-empty-note code { background: #eee; padding: 1px 5px; border-radius: 4px; }
-
-.auth-divider {
-  display: flex; align-items: center; gap: 12px;
-  color: var(--text-muted); font-size: 13px;
-  margin: 22px 0;
-}
-.auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
-
 #login-form label, #signup-form label, #forgot-form label, #reset-form label {
   display: block;
   font-size: 13.5px;

@@ -24,28 +24,6 @@
 
     <h1>Log In</h1>
 
-    <div class="oauth-buttons">
-      {% if providers.google %}
-      <a href="{{ url_for('auth.oauth_start', provider='google') }}" class="btn-oauth">
-        <i class="fa-brands fa-google"></i> Log in with Google
-      </a>
-      {% endif %}
-      {% if providers.linkedin %}
-      <a href="{{ url_for('auth.oauth_start', provider='linkedin') }}" class="btn-oauth">
-        <i class="fa-brands fa-linkedin"></i> Log in with LinkedIn
-      </a>
-      {% endif %}
-      {% if providers.github %}
-      <a href="{{ url_for('auth.oauth_start', provider='github') }}" class="btn-oauth">
-        <i class="fa-brands fa-github"></i> Log in with GitHub
-      </a>
-      {% endif %}
-    </div>
-
-    {% if providers.google or providers.linkedin or providers.github %}
-    <div class="auth-divider"><span>Or log in with email</span></div>
-    {% endif %}
-
     <form id="login-form" novalidate>
       <label for="email">Email*</label>
       <input type="email" id="email" name="email" required autocomplete="email">

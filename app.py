@@ -23,7 +23,7 @@ from flask_cors import CORS
 from flask_login import current_user
 from dotenv import load_dotenv
 
-from extensions import login_manager, oauth
+from extensions import login_manager
 from models.database import init_db
 from routes.meeting_routes import meeting_bp
 from routes.transcription_routes import transcription_bp
@@ -32,45 +32,6 @@ from routes.auth_routes import auth_bp
 from services import whisper_service
 
 load_dotenv()
-
-
-def _register_oauth_clients():
-    """
-    Register an OAuth client per provider ONLY if its credentials are
-    present in .env. Missing credentials simply disable that login button
-    (see routes/auth_routes.py::_configured_providers) instead of crashing
-    the app at startup.
-    """
-    if os.getenv("GOOGLE_CLIENT_ID") and os.getenv("GOOGLE_CLIENT_SECRET"):
-        oauth.register(
-            name="google",
-            client_id=os.getenv("GOOGLE_CLIENT_ID"),
-            client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
-            server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-            client_kwargs={"scope": "openid email profile"},
-        )
-
-    if os.getenv("LINKEDIN_CLIENT_ID") and os.getenv("LINKEDIN_CLIENT_SECRET"):
-        oauth.register(
-            name="linkedin",
-            client_id=os.getenv("LINKEDIN_CLIENT_ID"),
-            client_secret=os.getenv("LINKEDIN_CLIENT_SECRET"),
-            access_token_url="https://www.linkedin.com/oauth/v2/accessToken",
-            authorize_url="https://www.linkedin.com/oauth/v2/authorization",
-            api_base_url="https://api.linkedin.com/v2/",
-            client_kwargs={"scope": "openid profile email"},
-        )
-
-    if os.getenv("GITHUB_CLIENT_ID") and os.getenv("GITHUB_CLIENT_SECRET"):
-        oauth.register(
-            name="github",
-            client_id=os.getenv("GITHUB_CLIENT_ID"),
-            client_secret=os.getenv("GITHUB_CLIENT_SECRET"),
-            access_token_url="https://github.com/login/oauth/access_token",
-            authorize_url="https://github.com/login/oauth/authorize",
-            api_base_url="https://api.github.com/",
-            client_kwargs={"scope": "read:user user:email"},
-        )
 
 
 def _request_wants_json():
@@ -95,8 +56,6 @@ def create_app():
     init_db()
 
     login_manager.init_app(app)
-    oauth.init_app(app)
-    _register_oauth_clients()
 
     # Startup checks - warn loudly in the logs instead of only failing
     # silently later when someone tries to record/upload/transcribe.

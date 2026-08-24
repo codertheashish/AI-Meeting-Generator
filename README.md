@@ -24,7 +24,7 @@ OpenRouter. Export to PDF, DOCX, or TXT, or email the notes directly.
 - ✅ Editable, checkable action items with priority tags
 - ✏️ Rename any meeting — exported PDF/DOCX/TXT filenames follow the meeting's title, not a generic ID
 - 📤 Export to PDF / DOCX / TXT (generated in-memory, nothing touches disk), copy to clipboard, or send via email
-- 🔐 Login is optional — the whole app works for anonymous visitors (shared "guest" area); logging in (email/password or Google/LinkedIn/GitHub) gives you a private meeting history
+- 🔐 Login is optional — the whole app works for anonymous visitors (shared "guest" area); logging in with email/password gives you a private meeting history
 - 🗂️ Persistent meeting history in Postgres
 - 🔁 Retry button if AI analysis fails (free models occasionally return malformed JSON)
 
@@ -34,7 +34,7 @@ OpenRouter. Export to PDF, DOCX, or TXT, or email the notes directly.
 |---|---|
 | Frontend | HTML5, CSS3, vanilla JavaScript, Web Audio API, MediaRecorder API, Font Awesome |
 | Backend | Python 3.12, Flask, deployed as a Vercel serverless function |
-| Auth | Flask-Login (sessions) + Authlib (Google / LinkedIn / GitHub OAuth) + Werkzeug password hashing |
+| Auth | Flask-Login (sessions) + Werkzeug password hashing — email/password only, no OAuth |
 | Database | **Postgres** (Vercel Postgres/Neon, Supabase, Railway - any works) |
 | Audio Storage | **Vercel Blob** (bridges the upload request and the later transcribe request) |
 | Speech-to-Text | **Hosted Whisper API** (default: Groq's free `whisper-large-v3`) |
@@ -93,7 +93,7 @@ You'll need free accounts/keys for 3 external services before deploying
 3. **A Groq API key** (or another OpenAI-compatible transcription provider) — free at [console.groq.com/keys](https://console.groq.com/keys)
 4. **An OpenRouter API key** — free at [openrouter.ai/keys](https://openrouter.ai/keys)
 
-Optional: Google/LinkedIn/GitHub OAuth app credentials, and SMTP credentials for email.
+Optional: SMTP credentials for email (meeting-notes emails and password-reset links).
 
 ## Deploying to Vercel
 
@@ -150,31 +150,9 @@ Meetings made while logged out are stored in a shared "guest" area.
 **If you do log in**, your meetings become private to your account — no
 one else (including guest/anonymous visitors) can see them.
 
-**Email + password works immediately, no setup needed.** Go to `/signup`,
-create an account, and you're in.
-
-**Social login (Google / LinkedIn / GitHub) is optional too.** Each button
-only appears once you've added that provider's credentials as environment
-variables — leave any of them blank to simply hide that button.
-
-**Google**
-1. [console.cloud.google.com](https://console.cloud.google.com) → APIs & Services → Credentials → **Create OAuth client ID** (type: Web application)
-2. Authorized redirect URI: `https://<your-app>.vercel.app/auth/google/callback`
-3. Set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
-
-**LinkedIn**
-1. [developer.linkedin.com/apps](https://developer.linkedin.com/apps) → Create app
-2. Auth tab → add product **"Sign In with LinkedIn using OpenID Connect"**
-3. Authorized redirect URL: `https://<your-app>.vercel.app/auth/linkedin/callback`
-4. Set `LINKEDIN_CLIENT_ID` / `LINKEDIN_CLIENT_SECRET`
-
-**GitHub**
-1. [github.com/settings/developers](https://github.com/settings/developers) → OAuth Apps → **New OAuth App**
-2. Authorization callback URL: `https://<your-app>.vercel.app/auth/github/callback`
-3. Set `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`
-
-Redeploy after adding credentials — social buttons appear on `/login` and
-`/signup` automatically once detected.
+**Email + password only** — no OAuth/social login, so there's nothing to
+register with a third-party provider. Go to `/signup`, create an account,
+and you're in.
 
 **Forgot password** reuses the same SMTP settings (`MAIL_USERNAME` /
 `MAIL_PASSWORD`) as the email-export feature. Reset links expire after 1 hour.
@@ -203,7 +181,7 @@ AI-Meeting-Notes/
 │   ├── audio_service.py       # Upload validation, hands off to storage_service
 │   └── export_service.py      # PDF / DOCX / TXT generation, entirely in-memory
 ├── routes/
-│   ├── auth_routes.py         # Signup/login/logout, forgot/reset password, OAuth
+│   ├── auth_routes.py         # Signup/login/logout, forgot/reset password (email/password only)
 │   ├── meeting_routes.py      # CRUD for meetings & action items (per-user)
 │   ├── transcription_routes.py# record/upload/transcribe/analyze
 │   └── export_routes.py       # export + email
@@ -252,8 +230,6 @@ Login is optional for all of the above. If you're logged in, they operate on you
 | POST | `/api/auth/forgot-password` | Email a password-reset link (expires in 1 hour) |
 | GET | `/reset-password/<token>` | Render the reset-password form (or an "expired" message) |
 | POST | `/api/auth/reset-password` | Set a new password using a valid reset token |
-| GET | `/auth/<provider>` | Start Google/LinkedIn/GitHub OAuth login |
-| GET | `/auth/<provider>/callback` | OAuth callback — creates or logs in the matching account |
 
 ### AI note JSON shape
 
@@ -312,20 +288,4 @@ The app handles and surfaces clear, user-friendly messages for:
 - **"Model was not found on OpenRouter (404)"** — the free model slug in `OPENROUTER_MODEL` may have been retired; check [openrouter.ai/models](https://openrouter.ai/models) and pick a currently-available free one.
 - **413 / upload rejected** — the file exceeds `MAX_CONTENT_LENGTH` (25MB) or Vercel's own request-size limit (commonly ~4.5MB) — try a shorter clip.
 - **Email failures (meeting notes or password reset)** — for Gmail specifically, a `535 BadCredentials` error means you're using your normal Gmail password instead of an [App Password](https://support.google.com/accounts/answer/185833).
-- **"Log in with Google/LinkedIn/GitHub" button doesn't appear** — that provider's `CLIENT_ID`/`CLIENT_SECRET` aren't set yet, or you haven't redeployed since adding them.
-- **OAuth redirects back with an error** — double-check the redirect URI registered with the provider exactly matches `https://<your-app>.vercel.app/auth/<provider>/callback`, and that `APP_URL` matches your real deployment URL.
 - **My old meetings disappeared after this update** — if you're migrating from the local-SQLite version, meeting data does not automatically transfer to Postgres; this is a fresh database.
-
-## 👨‍💻 Author
-
-### Ashish Kumar Prajapati
-
-- GitHub :
-[codertheashish](https://github.com/codertheashish)
-- LinkedIn :
-[codertheashish](https://www.linkedin.com/in/codertheashish/)
-- Instagram :
-[codertheashish](https://www.instagram.com/codertheashish/)
----
-
-⭐ If you like this project, don't forget to give it a ⭐ on GitHub.

@@ -1,25 +1,24 @@
 """
-Shared Flask extension instances (Flask-Login, Authlib OAuth client).
+Shared Flask extension instances (Flask-Login).
 
 Kept in their own module - separate from app.py and routes/auth_routes.py -
-so both can import the same `login_manager` / `oauth` objects without a
-circular import.
+so both can import the same `login_manager` object without a circular
+import.
 
 NOTE: Login is OPTIONAL in this app, not required. Routes do not use
 Flask-Login's @login_required, so anonymous visitors can use the dashboard
 directly. If someone does log in, their meetings are private to their
 account; if they don't, meetings are stored under a shared "guest" bucket
 (user_id = NULL) - the same behavior the app had before accounts existed.
+
+Auth is email/password only - no OAuth/social login.
 """
 from flask_login import LoginManager, UserMixin, current_user
-from authlib.integrations.flask_client import OAuth
 
 login_manager = LoginManager()
 login_manager.login_view = "auth.login_page"
 login_manager.login_message = "Please log in to continue."
 login_manager.login_message_category = "warning"
-
-oauth = OAuth()
 
 
 class LoginUser(UserMixin):

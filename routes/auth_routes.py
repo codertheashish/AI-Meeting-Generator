@@ -1,12 +1,9 @@
 """
-Authentication routes.
+Authentication routes - email/password only (no OAuth/social login).
 
-- Email/password signup, login, logout (session-based via Flask-Login)
+- Signup, login, logout (session-based via Flask-Login)
 - Forgot / reset password (token emailed via the same SMTP config used
   for meeting-notes emails)
-- OAuth login via Google, LinkedIn, and GitHub (Authlib). Each provider
-  is only enabled if its CLIENT_ID/CLIENT_SECRET are present in .env -
-  missing credentials disable that button rather than crashing the app.
 """
 import os
 import re
@@ -17,22 +14,13 @@ from email.message import EmailMessage
 from flask import Blueprint, current_app, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
-from extensions import LoginUser, oauth
+from extensions import LoginUser
 from models import database as db
 from services import auth_service
 
 auth_bp = Blueprint("auth", __name__)
 
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
-
-
-def _configured_providers():
-    """Which OAuth providers have credentials set, for the template to show/hide buttons."""
-    return {
-        "google": bool(os.getenv("GOOGLE_CLIENT_ID") and os.getenv("GOOGLE_CLIENT_SECRET")),
-        "linkedin": bool(os.getenv("LINKEDIN_CLIENT_ID") and os.getenv("LINKEDIN_CLIENT_SECRET")),
-        "github": bool(os.getenv("GITHUB_CLIENT_ID") and os.getenv("GITHUB_CLIENT_SECRET")),
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -43,14 +31,14 @@ def _configured_providers():
 def login_page():
     if current_user.is_authenticated:
         return redirect(url_for("index"))
-    return render_template("login.html", providers=_configured_providers())
+    return render_template("login.html")
 
 
 @auth_bp.route("/signup", methods=["GET"])
 def signup_page():
     if current_user.is_authenticated:
         return redirect(url_for("index"))
-    return render_template("signup.html", providers=_configured_providers())
+    return render_template("signup.html")
 
 
 @auth_bp.route("/api/auth/signup", methods=["POST"])
@@ -174,96 +162,3 @@ def reset_password():
 
     db.update_user_password(user_id, auth_service.hash_password(password))
     return jsonify({"success": True, "redirect": url_for("auth.login_page")})
-
-
-# ---------------------------------------------------------------------------
-# OAuth (Google / LinkedIn / GitHub)
-# ---------------------------------------------------------------------------
-
-@auth_bp.route("/auth/<provider>")
-def oauth_start(provider):
-    if provider not in _configured_providers() or not _configured_providers()[provider]:
-        return redirect(url_for("auth.login_page"))
-    client = oauth.create_client(provider)
-    redirect_uri = url_for("auth.oauth_callback", provider=provider, _external=True)
-    return client.authorize_redirect(redirect_uri)
-
-
-@auth_bp.route("/auth/<provider>/callback")
-def oauth_callback(provider):
-    if provider not in _configured_providers() or not _configured_providers()[provider]:
-        return redirect(url_for("auth.login_page"))
-
-    client = oauth.create_client(provider)
-    try:
-        token = client.authorize_access_token()
-    except Exception:  # noqa: BLE001
-        current_app.logger.error(traceback.format_exc())
-        return redirect(url_for("auth.login_page", error="oauth_failed"))
-
-    try:
-        profile = _fetch_oauth_profile(provider, client, token)
-    except Exception:  # noqa: BLE001
-        current_app.logger.error(traceback.format_exc())
-        return redirect(url_for("auth.login_page", error="oauth_failed"))
-
-    if not profile.get("email"):
-        return redirect(url_for("auth.login_page", error="oauth_no_email"))
-
-    # Match an existing account by OAuth id first, then by email (so a user
-    # who originally signed up with a password can also log in via OAuth).
-    user_row = db.get_user_by_oauth(provider, profile["oauth_id"]) or db.get_user_by_email(profile["email"])
-    if user_row:
-        db.link_oauth_to_user(user_row["id"], provider, profile["oauth_id"], profile.get("avatar_url"))
-        user_row = db.get_user_by_id(user_row["id"])
-    else:
-        user_id = db.create_user(
-            email=profile["email"],
-            name=profile.get("name", ""),
-            oauth_provider=provider,
-            oauth_id=profile["oauth_id"],
-            avatar_url=profile.get("avatar_url"),
-        )
-        user_row = db.get_user_by_id(user_id)
-
-    login_user(LoginUser(user_row))
-    return redirect(url_for("index"))
-
-
-def _fetch_oauth_profile(provider, client, token):
-    """Normalize each provider's profile response into {email, name, oauth_id, avatar_url}."""
-    if provider == "google":
-        info = client.parse_id_token(token) if hasattr(client, "parse_id_token") else None
-        if not info:
-            info = client.get("https://openidconnect.googleapis.com/v1/userinfo").json()
-        return {
-            "email": info.get("email"),
-            "name": info.get("name", ""),
-            "oauth_id": info.get("sub"),
-            "avatar_url": info.get("picture"),
-        }
-
-    if provider == "linkedin":
-        info = client.get("https://api.linkedin.com/v2/userinfo").json()
-        return {
-            "email": info.get("email"),
-            "name": info.get("name", ""),
-            "oauth_id": info.get("sub"),
-            "avatar_url": info.get("picture"),
-        }
-
-    if provider == "github":
-        info = client.get("user").json()
-        email = info.get("email")
-        if not email:
-            emails = client.get("user/emails").json()
-            primary = next((e for e in emails if e.get("primary")), None)
-            email = primary["email"] if primary else (emails[0]["email"] if emails else None)
-        return {
-            "email": email,
-            "name": info.get("name") or info.get("login", ""),
-            "oauth_id": str(info.get("id")),
-            "avatar_url": info.get("avatar_url"),
-        }
-
-    raise ValueError(f"Unknown OAuth provider: {provider}")

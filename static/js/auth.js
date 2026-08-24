@@ -57,13 +57,6 @@
           setSubmitting(btn, false, "Log In");
         }
       });
-
-      const params = new URLSearchParams(window.location.search);
-      if (params.get("error") === "oauth_failed") {
-        UI.toast("Social login failed or was cancelled. Please try again.", "error");
-      } else if (params.get("error") === "oauth_no_email") {
-        UI.toast("That provider didn't share an email address, so we couldn't log you in.", "error");
-      }
     }
 
     // --- Signup form ---

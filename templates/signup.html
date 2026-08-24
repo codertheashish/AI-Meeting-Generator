@@ -24,28 +24,6 @@
 
     <h1>Create Account</h1>
 
-    <div class="oauth-buttons">
-      {% if providers.google %}
-      <a href="{{ url_for('auth.oauth_start', provider='google') }}" class="btn-oauth">
-        <i class="fa-brands fa-google"></i> Sign up with Google
-      </a>
-      {% endif %}
-      {% if providers.linkedin %}
-      <a href="{{ url_for('auth.oauth_start', provider='linkedin') }}" class="btn-oauth">
-        <i class="fa-brands fa-linkedin"></i> Sign up with LinkedIn
-      </a>
-      {% endif %}
-      {% if providers.github %}
-      <a href="{{ url_for('auth.oauth_start', provider='github') }}" class="btn-oauth">
-        <i class="fa-brands fa-github"></i> Sign up with GitHub
-      </a>
-      {% endif %}
-    </div>
-
-    {% if providers.google or providers.linkedin or providers.github %}
-    <div class="auth-divider"><span>Or sign up with email</span></div>
-    {% endif %}
-
     <form id="signup-form" novalidate>
       <label for="name">Name</label>
       <input type="text" id="name" name="name" autocomplete="name" placeholder="Your name">
