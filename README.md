@@ -5,9 +5,13 @@ locally with **Whisper**, generates structured notes (summary, action items, key
 highlights, decisions) with an LLM via **OpenRouter**, tracks speaker analytics, and
 exports notes as PDF / DOCX / TXT or emails them directly.
 
-![stack](https://img.shields.io/badge/backend-Flask-informational)
-![stack](https://img.shields.io/badge/stt-Whisper-informational)
-![stack](https://img.shields.io/badge/llm-OpenRouter-informational)
+---
+
+## 🤖 Demo :
+
+```bash
+https://codertheashish.github.io/AI-Meeting-Generator/
+```
 
 ---
 
@@ -185,6 +189,17 @@ Then open **http://127.0.0.1:5000** in your browser.
 
 ---
 
-## 📄 License
 
-This project is provided as-is for personal and educational use.
+## Author
+
+**Ashish Kumar Prajapati**
+
+- GitHub :
+[codertheashish](https://github.com/codertheashish)
+- LinkedIn :
+[codertheashish](https://www.linkedin.com/in/codertheashish/)
+- Instagram :
+[codertheashish](https://www.instagram.com/codertheashish/)
+---
+
+⭐ If you like this portfolio, don't forget to give it a star on my GitHub account.
