@@ -204,5 +204,9 @@ Then open **http://127.0.0.1:5000** in your browser.
 
 ⭐ If you like this portfolio, don't forget to give it a star on my GitHub account.
 
+<<<<<<< HEAD
 
 
+=======
+![alt text](<AI Meeting Generator.png>)
+>>>>>>> 53c6847 (Add Thumbnail Image)
