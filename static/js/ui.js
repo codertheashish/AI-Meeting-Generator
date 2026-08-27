@@ -1,137 +1,112 @@
-/* ui.js — shared UI helpers: toasts, loading overlay, nav/view switching */
+/* =========================================================
+   AI Meeting Generator - ui.js
+   Shared UI helpers: toasts, mobile nav, loaders, formatting.
+   Exposes a global `UI` object used by the other JS modules.
+   ========================================================= */
+
+// Shared global app state, used across recorder.js / transcription.js / notes.js / export.js / app.js
+window.AppState = {
+  currentMeetingId: null,
+  currentMeeting: null,   // full meeting object once notes are generated
+  lastSegments: [],
+};
 
 const UI = (() => {
-  const toastContainer = document.getElementById("toast-container");
-  const loadingOverlay = document.getElementById("loading-overlay");
-  const loadingMessage = document.getElementById("loading-message");
+  const toastContainer = document.getElementById("toastContainer");
 
-  function toast(message, type = "info", duration = 4500) {
+  function toast(message, type = "info", timeout = 4000) {
     const el = document.createElement("div");
     el.className = `toast ${type}`;
-    el.innerHTML = `<span>${escapeHtml(message)}</span>`;
+    const icon =
+      type === "success" ? "fa-circle-check" :
+      type === "error" ? "fa-circle-exclamation" : "fa-circle-info";
+    el.innerHTML = `<i class="fa-solid ${icon}"></i><span></span>`;
+    el.querySelector("span").textContent = message;
     toastContainer.appendChild(el);
-    setTimeout(() => el.remove(), duration);
+    setTimeout(() => {
+      el.style.opacity = "0";
+      el.style.transition = "opacity .25s ease";
+      setTimeout(() => el.remove(), 250);
+    }, timeout);
   }
 
-  function showLoading(message = "Processing...") {
-    loadingMessage.textContent = message;
-    loadingOverlay.classList.remove("hidden");
+  function success(msg) { toast(msg, "success"); }
+  function error(msg) { toast(msg, "error", 6000); }
+  function info(msg) { toast(msg, "info"); }
+
+  function setLoading(el, isLoading) {
+    if (!el) return;
+    el.style.display = isLoading ? "inline-flex" : "none";
   }
 
-  function hideLoading() {
-    loadingOverlay.classList.add("hidden");
+  function setButtonBusy(btn, isBusy, busyLabel) {
+    if (!btn) return;
+    if (isBusy) {
+      btn.dataset.originalHtml = btn.innerHTML;
+      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${busyLabel || "Working..."}`;
+      btn.disabled = true;
+    } else {
+      if (btn.dataset.originalHtml) btn.innerHTML = btn.dataset.originalHtml;
+      btn.disabled = false;
+    }
+  }
+
+  function formatTime(totalSeconds) {
+    totalSeconds = Math.max(0, Math.floor(totalSeconds || 0));
+    const h = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
+    const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0");
+    const s = String(totalSeconds % 60).padStart(2, "0");
+    return `${h}:${m}:${s}`;
+  }
+
+  function formatDate(isoString) {
+    if (!isoString) return "-";
+    try {
+      const d = new Date(isoString);
+      if (isNaN(d.getTime())) return isoString;
+      return d.toLocaleString(undefined, {
+        year: "numeric", month: "short", day: "numeric",
+        hour: "2-digit", minute: "2-digit",
+      });
+    } catch {
+      return isoString;
+    }
   }
 
   function escapeHtml(str) {
     const div = document.createElement("div");
-    div.textContent = str;
+    div.textContent = str ?? "";
     return div.innerHTML;
   }
 
-  function formatTime(totalSeconds) {
-    const h = Math.floor(totalSeconds / 3600);
-    const m = Math.floor((totalSeconds % 3600) / 60);
-    const s = Math.floor(totalSeconds % 60);
-    return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
-  }
-
-  function initNav() {
-    const links = document.querySelectorAll(".nav-link");
-    const menuBtn = document.getElementById("mobile-menu-btn");
-    const nav = document.getElementById("main-nav");
-    if (!nav || links.length === 0) return; // not on a page with the dashboard header (e.g. login/signup)
-
-    // Each nav item scrolls to its own section - previously every link
-    // scrolled to #history-card, which made every click but the first
-    // look broken.
-    const targets = {
-      dashboard: "dashboard-top",
-      meetings: "history-card",
-      notes: "summary-card",
-      settings: "settings-card",
+  function statusLabel(status) {
+    const map = {
+      created: "Created",
+      recorded: "Recorded",
+      uploaded: "Uploaded",
+      transcribed: "Transcribed",
+      notes_generated: "Notes Ready",
     };
+    return map[status] || status || "Unknown";
+  }
 
-    function activateView(view) {
-      links.forEach((l) => l.classList.toggle("active", l.dataset.view === view));
-      nav.classList.remove("open");
+  // ---- Mobile nav toggle ----
+  function initNav() {
+    const nav = document.getElementById("mainNav");
+    const btn = document.getElementById("hamburgerBtn");
+    if (!nav || !btn) return;
+    btn.addEventListener("click", () => nav.classList.toggle("open"));
 
-      const targetId = targets[view];
-      const targetEl = targetId && document.getElementById(targetId);
-      if (targetEl) {
-        targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-
-      if (view === "meetings") {
-        Notes.loadHistory();
-      } else if (view === "settings") {
-        Settings.load();
-      }
-    }
-
-    links.forEach((link) => {
-      link.addEventListener("click", (e) => {
-        e.preventDefault();
-        activateView(link.dataset.view);
+    document.querySelectorAll(".nav-link").forEach((link) => {
+      link.addEventListener("click", () => {
+        document.querySelectorAll(".nav-link").forEach((l) => l.classList.remove("active"));
+        link.classList.add("active");
+        nav.classList.remove("open");
       });
     });
-
-    // The avatar dropdown also has a "Settings" shortcut - reuse the same logic.
-    document.querySelectorAll('.dropdown-item[data-view]').forEach((item) => {
-      item.addEventListener("click", (e) => {
-        e.preventDefault();
-        closeAllDropdowns();
-        activateView(item.dataset.view);
-      });
-    });
-
-    if (menuBtn) menuBtn.addEventListener("click", () => nav.classList.toggle("open"));
   }
 
-  function closeAllDropdowns() {
-    document.querySelectorAll(".dropdown-panel").forEach((p) => p.classList.add("hidden"));
-  }
+  document.addEventListener("DOMContentLoaded", initNav);
 
-  function initHeaderDropdowns() {
-    const notifBtn = document.getElementById("notif-btn");
-    const notifDropdown = document.getElementById("notif-dropdown");
-    const avatarBtn = document.getElementById("avatar-btn");
-    const avatarDropdown = document.getElementById("avatar-dropdown");
-
-    function toggle(panel) {
-      const willOpen = panel.classList.contains("hidden");
-      closeAllDropdowns();
-      if (willOpen) panel.classList.remove("hidden");
-    }
-
-    // avatar-btn/avatar-dropdown only exist when someone is logged in
-    // (see index.html's {% if user.is_authenticated %}) - bind each
-    // control independently so anonymous visitors still get a working
-    // notification bell even without an account.
-    if (notifBtn && notifDropdown) {
-      notifBtn.addEventListener("click", (e) => { e.stopPropagation(); toggle(notifDropdown); });
-    }
-    if (avatarBtn && avatarDropdown) {
-      avatarBtn.addEventListener("click", (e) => { e.stopPropagation(); toggle(avatarDropdown); });
-    }
-    if (notifBtn || avatarBtn) {
-      document.addEventListener("click", closeAllDropdowns);
-    }
-  }
-
-  function showConfigBanner(message) {
-    const banner = document.getElementById("config-banner");
-    if (!banner) return;
-    banner.innerHTML = message;
-    banner.classList.remove("hidden");
-  }
-
-  return {
-    toast, showLoading, hideLoading, escapeHtml, formatTime, initNav,
-    initHeaderDropdowns, showConfigBanner,
-  };
+  return { toast, success, error, info, setLoading, setButtonBusy, formatTime, formatDate, escapeHtml, statusLabel };
 })();
-
-document.addEventListener("DOMContentLoaded", () => {
-  UI.initNav();
-  UI.initHeaderDropdowns();
-});

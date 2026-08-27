@@ -1,48 +1,70 @@
-/* ---------- Tablet ---------- */
+/* =========================================================
+   AI Meeting Generator - responsive.css
+   Tablet + mobile breakpoints
+   ========================================================= */
+
+/* ---------------- Tablet (<=1024px) ---------------- */
 @media (max-width: 1024px) {
-  .dashboard-grid { grid-template-columns: 1fr; }
-  .recording-card, .transcription-card { grid-column: span 1; }
-  .header-inner { padding: 14px 20px; }
-  .hero { padding: 44px 20px 32px; }
-  .hero h1 { font-size: 32px; }
-  .how-it-works, .dashboard-grid { padding-left: 20px; padding-right: 20px; }
-  .history-card { margin-left: 20px; margin-right: 20px; }
+  .notes-grid { grid-template-columns: 1fr; }
+  .steps { grid-template-columns: repeat(3, 1fr); }
+  .speaker-row { grid-template-columns: 120px 1fr 80px; }
 }
 
-/* ---------- Mobile ---------- */
-@media (max-width: 680px) {
-  .main-nav { display: none; }
-  .main-nav.open {
-    display: flex;
-    flex-direction: column;
-    position: absolute;
-    top: 100%; left: 0; right: 0;
-    background: #fff;
-    border-bottom: 1px solid var(--border);
-    padding: 10px 20px 16px;
-    gap: 4px;
+/* ---------------- Small tablet / large phone (<=768px) ---------------- */
+@media (max-width: 768px) {
+  .header-inner { padding: 12px 16px; }
+  .main-nav { display: none; position: absolute; top: 60px; left: 16px; right: 16px;
+    flex-direction: column; background: #fff; box-shadow: var(--shadow-lg); border-radius: 14px; }
+  .main-nav.open { display: flex; }
+  .nav-link { text-align: center; }
+  .hamburger { display: block; }
+
+  .app-main { padding: 22px 16px 40px; }
+
+  .hero { padding: 36px 8px 30px; }
+  .hero h1 { font-size: 30px; }
+  .hero-sub { font-size: 15px; }
+  .hero-actions { flex-direction: column; align-items: stretch; }
+  .hero-actions .btn { width: 100%; }
+
+  .card { padding: 18px; border-radius: var(--radius-md); }
+
+  .rec-controls { flex-direction: column; align-items: stretch; width: 100%; }
+  .rec-controls .btn { width: 100%; }
+
+  .steps { grid-template-columns: 1fr 1fr; }
+
+  .speaker-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
   }
-  .mobile-menu-btn { display: block; }
-  .header-inner { position: relative; }
+  .speaker-stats { text-align: left; }
+
+  .export-actions { flex-direction: column; align-items: stretch; }
+  .export-actions .btn { width: 100%; }
+
+  .email-field { flex-direction: column; align-items: flex-start; }
+  .email-field label { width: auto; }
+  .email-field input { width: 100%; }
+}
+
+/* ---------------- Mobile (<=480px) ---------------- */
+@media (max-width: 480px) {
+  .logo span { display: none; }
+  .logo-icon { width: 34px; height: 34px; }
+
+  .user-chip span { display: none; }
 
   .hero h1 { font-size: 26px; }
-  .hero-subtitle { font-size: 15px; }
-  .hero-actions { flex-direction: column; align-items: stretch; }
-  .hero-actions .btn { justify-content: center; }
 
-  .card { padding: 18px; }
   .mic-btn { width: 68px; height: 68px; font-size: 24px; }
-  .pulse-ring { width: 92px; height: 92px; }
-  .timer { font-size: 26px; }
+  .timer { font-size: 22px; }
+  .waveform { height: 70px; }
 
-  .recording-controls { flex-direction: column; width: 100%; }
-  .recording-controls .btn { justify-content: center; width: 100%; }
+  .steps { grid-template-columns: 1fr; }
 
-  .export-buttons { flex-direction: column; }
-  .export-buttons .btn { justify-content: center; }
+  .transcript-table thead th:first-child,
+  .transcript-table td:first-child { display: none; }
 
-  .transcription-table { font-size: 12.5px; }
-  .transcription-table td, .transcription-table th { padding: 8px; }
-
-  .history-item { flex-direction: column; align-items: flex-start; }
+  .card-header { flex-direction: column; align-items: flex-start; gap: 8px; }
 }

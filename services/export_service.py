@@ -1,183 +1,191 @@
 """
-Generates downloadable meeting-notes documents: TXT, DOCX, PDF.
-
-Each function returns an in-memory io.BytesIO buffer rather than a file
-path, so nothing ever touches disk - Vercel's serverless filesystem is
-read-only outside /tmp, and there's no reason to write a temp file at all
-when the content can be streamed straight back to the client via
-Flask's send_file(buffer, ...).
+export_service.py
+------------------
+Generates downloadable, properly formatted meeting-notes documents:
+PDF (reportlab), DOCX (python-docx), and plain TXT.
 """
-import io
+
+import os
+
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
+from reportlab.lib import colors
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, ListFlowable, ListItem, Table, TableStyle
+)
 
 from docx import Document
 from docx.shared import Pt, RGBColor
-from fpdf import FPDF
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+PURPLE = "6C5CE7"
 
 
-def _build_sections(meeting):
-    participants = ", ".join(s["name"] for s in meeting.get("speakers", [])) or "Not detected"
-    action_items = meeting.get("action_items", [])
-    highlights = meeting.get("key_highlights", [])
-    decisions = meeting.get("decisions", [])
-    follow_ups = meeting.get("follow_up_points", [])
-    return participants, action_items, highlights, decisions, follow_ups
+def _speakers_text(meeting):
+    return ", ".join(s["name"] for s in meeting.get("speakers", [])) or "Not identified"
 
 
-def export_txt(meeting):
-    """Returns an io.BytesIO containing the plain-text notes (UTF-8 encoded)."""
-    participants, action_items, highlights, decisions, follow_ups = _build_sections(meeting)
-
-    lines = [
-        f"MEETING NOTES: {meeting.get('title', 'Untitled Meeting')}",
-        f"Date: {meeting.get('date', '')}",
-        f"Participants: {participants}",
-        "",
-        "SUMMARY",
-        "-------",
-        meeting.get("summary", "") or "N/A",
-        "",
-        "ACTION ITEMS",
-        "------------",
-    ]
-    if action_items:
-        for item in action_items:
-            status = "[x]" if item.get("completed") else "[ ]"
-            lines.append(
-                f"{status} {item.get('task','')} — {item.get('assigned_to','Unassigned')} — "
-                f"Due: {item.get('deadline','TBD')} — Priority: {item.get('priority','Medium')}"
-            )
+def build_text_notes(meeting):
+    """Returns a plain-text string with the full formatted meeting notes."""
+    lines = []
+    lines.append(f"MEETING NOTES - {meeting.get('title', 'Untitled Meeting')}")
+    lines.append(f"Date & Time: {meeting.get('date', '')}")
+    lines.append(f"Duration: {meeting.get('duration', 0)} seconds")
+    lines.append(f"Participants: {_speakers_text(meeting)}")
+    lines.append("")
+    lines.append("SUMMARY")
+    lines.append(meeting.get("summary") or "No summary available.")
+    lines.append("")
+    lines.append("ACTION ITEMS")
+    items = meeting.get("action_items") or []
+    if items:
+        for i in items:
+            box = "[x]" if i.get("completed") else "[ ]"
+            lines.append(f"  {box} {i.get('task','')} - {i.get('assigned_to','Unassigned')} (Due: {i.get('deadline','N/A')})")
     else:
-        lines.append("No action items recorded.")
+        lines.append("  None recorded.")
+    lines.append("")
+    lines.append("KEY HIGHLIGHTS")
+    highlights = meeting.get("key_highlights") or []
+    if highlights:
+        for h in highlights:
+            lines.append(f"  - {h}")
+    else:
+        lines.append("  None recorded.")
+    lines.append("")
+    lines.append("DECISIONS")
+    decisions = meeting.get("decisions") or []
+    if decisions:
+        for d in decisions:
+            lines.append(f"  - {d}")
+    else:
+        lines.append("  None recorded.")
+    lines.append("")
+    lines.append("FULL TRANSCRIPT")
+    lines.append(meeting.get("transcript") or "No transcript available.")
+    return "\n".join(lines)
 
-    lines += ["", "KEY HIGHLIGHTS", "--------------"]
-    lines += [f"- {h}" for h in highlights] or ["No highlights recorded."]
 
-    lines += ["", "DECISIONS MADE", "--------------"]
-    lines += [f"- {d}" for d in decisions] or ["No decisions recorded."]
-
-    lines += ["", "FOLLOW-UP POINTS", "----------------"]
-    lines += [f"- {f}" for f in follow_ups] or ["No follow-up points recorded."]
-
-    lines += ["", "FULL TRANSCRIPT", "---------------", meeting.get("transcript", "") or "N/A"]
-
-    buffer = io.BytesIO("\n".join(lines).encode("utf-8"))
-    buffer.seek(0)
-    return buffer
+def export_txt(meeting, out_path):
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(build_text_notes(meeting))
+    return out_path
 
 
-def export_docx(meeting):
-    """Returns an io.BytesIO containing the generated .docx file."""
-    participants, action_items, highlights, decisions, follow_ups = _build_sections(meeting)
+def export_pdf(meeting, out_path):
+    doc = SimpleDocTemplate(
+        out_path, pagesize=A4,
+        topMargin=2 * cm, bottomMargin=2 * cm, leftMargin=2 * cm, rightMargin=2 * cm,
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "TitleStyle", parent=styles["Title"], textColor=colors.HexColor(f"#{PURPLE}"), fontSize=22,
+    )
+    h2 = ParagraphStyle("H2", parent=styles["Heading2"], textColor=colors.HexColor(f"#{PURPLE}"), spaceBefore=14)
+    body = styles["BodyText"]
+    body.leading = 15
 
+    story = [
+        Paragraph(meeting.get("title", "Untitled Meeting"), title_style),
+        Spacer(1, 6),
+        Paragraph(f"<b>Date &amp; Time:</b> {meeting.get('date','')}", body),
+        Paragraph(f"<b>Duration:</b> {meeting.get('duration',0)} seconds", body),
+        Paragraph(f"<b>Participants:</b> {_speakers_text(meeting)}", body),
+    ]
+
+    story.append(Paragraph("Summary", h2))
+    story.append(Paragraph(meeting.get("summary") or "No summary available.", body))
+
+    story.append(Paragraph("Action Items", h2))
+    items = meeting.get("action_items") or []
+    if items:
+        rows = [["Done", "Task", "Assigned To", "Deadline"]]
+        for i in items:
+            rows.append(["Yes" if i.get("completed") else "No", i.get("task", ""), i.get("assigned_to", ""), i.get("deadline", "")])
+        table = Table(rows, colWidths=[2 * cm, 7 * cm, 4 * cm, 3 * cm])
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(f"#{PURPLE}")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E0E0E0")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+        story.append(table)
+    else:
+        story.append(Paragraph("None recorded.", body))
+
+    story.append(Paragraph("Key Highlights", h2))
+    highlights = meeting.get("key_highlights") or []
+    if highlights:
+        story.append(ListFlowable([ListItem(Paragraph(h, body)) for h in highlights], bulletType="bullet"))
+    else:
+        story.append(Paragraph("None recorded.", body))
+
+    story.append(Paragraph("Decisions Made", h2))
+    decisions = meeting.get("decisions") or []
+    if decisions:
+        story.append(ListFlowable([ListItem(Paragraph(d, body)) for d in decisions], bulletType="bullet"))
+    else:
+        story.append(Paragraph("None recorded.", body))
+
+    story.append(Paragraph("Full Transcript", h2))
+    transcript = (meeting.get("transcript") or "No transcript available.").replace("\n", "<br/>")
+    story.append(Paragraph(transcript, body))
+
+    doc.build(story)
+    return out_path
+
+
+def export_docx(meeting, out_path):
     doc = Document()
 
     title = doc.add_heading(meeting.get("title", "Untitled Meeting"), level=0)
-    title.runs[0].font.color.rgb = RGBColor(0x6D, 0x28, 0xD9)
+    for run in title.runs:
+        run.font.color.rgb = RGBColor(0x6C, 0x5C, 0xE7)
 
     meta = doc.add_paragraph()
-    meta.add_run(f"Date & Time: ").bold = True
-    meta.add_run(f"{meeting.get('date', '')}\n")
-    meta.add_run("Participants: ").bold = True
-    meta.add_run(participants)
+    meta.add_run(f"Date & Time: {meeting.get('date','')}\n").bold = True
+    meta.add_run(f"Duration: {meeting.get('duration',0)} seconds\n").bold = True
+    meta.add_run(f"Participants: {_speakers_text(meeting)}").bold = True
 
     doc.add_heading("Summary", level=1)
-    doc.add_paragraph(meeting.get("summary", "") or "N/A")
+    doc.add_paragraph(meeting.get("summary") or "No summary available.")
 
     doc.add_heading("Action Items", level=1)
-    if action_items:
-        for item in action_items:
-            status = "Done" if item.get("completed") else "Pending"
-            p = doc.add_paragraph(style="List Bullet")
-            p.add_run(f"{item.get('task','')} ").bold = True
-            p.add_run(
-                f"— Assigned to: {item.get('assigned_to','Unassigned')} | "
-                f"Deadline: {item.get('deadline','TBD')} | Priority: {item.get('priority','Medium')} | Status: {status}"
-            )
+    items = meeting.get("action_items") or []
+    if items:
+        table = doc.add_table(rows=1, cols=4)
+        table.style = "Light Grid Accent 5"
+        hdr = table.rows[0].cells
+        hdr[0].text, hdr[1].text, hdr[2].text, hdr[3].text = "Done", "Task", "Assigned To", "Deadline"
+        for i in items:
+            row = table.add_row().cells
+            row[0].text = "Yes" if i.get("completed") else "No"
+            row[1].text = i.get("task", "")
+            row[2].text = i.get("assigned_to", "")
+            row[3].text = i.get("deadline", "")
     else:
-        doc.add_paragraph("No action items recorded.")
+        doc.add_paragraph("None recorded.")
 
     doc.add_heading("Key Highlights", level=1)
+    highlights = meeting.get("key_highlights") or []
     if highlights:
         for h in highlights:
             doc.add_paragraph(h, style="List Bullet")
     else:
-        doc.add_paragraph("No highlights recorded.")
+        doc.add_paragraph("None recorded.")
 
     doc.add_heading("Decisions Made", level=1)
+    decisions = meeting.get("decisions") or []
     if decisions:
         for d in decisions:
             doc.add_paragraph(d, style="List Bullet")
     else:
-        doc.add_paragraph("No decisions recorded.")
-
-    doc.add_heading("Follow-up Points", level=1)
-    if follow_ups:
-        for f in follow_ups:
-            doc.add_paragraph(f, style="List Bullet")
-    else:
-        doc.add_paragraph("No follow-up points recorded.")
+        doc.add_paragraph("None recorded.")
 
     doc.add_heading("Full Transcript", level=1)
-    transcript_para = doc.add_paragraph(meeting.get("transcript", "") or "N/A")
-    for run in transcript_para.runs:
-        run.font.size = Pt(9)
+    doc.add_paragraph(meeting.get("transcript") or "No transcript available.")
 
-    buffer = io.BytesIO()
-    doc.save(buffer)
-    buffer.seek(0)
-    return buffer
-
-
-class _NotesPDF(FPDF):
-    def header(self):
-        self.set_font("Helvetica", "B", 16)
-        self.set_text_color(109, 40, 217)  # purple accent
-        self.cell(0, 10, self.title_text, ln=True)
-        self.set_text_color(0, 0, 0)
-        self.ln(2)
-
-    def section(self, heading, body):
-        self.set_font("Helvetica", "B", 12)
-        self.set_text_color(76, 29, 149)
-        self.cell(0, 8, heading, ln=True)
-        self.set_text_color(0, 0, 0)
-        self.set_font("Helvetica", "", 10)
-        self.multi_cell(0, 6, body)
-        self.ln(2)
-
-
-def export_pdf(meeting):
-    """Returns an io.BytesIO containing the generated .pdf file."""
-    participants, action_items, highlights, decisions, follow_ups = _build_sections(meeting)
-
-    pdf = _NotesPDF()
-    pdf.title_text = _latin1(meeting.get("title", "Untitled Meeting"))
-    pdf.add_page()
-
-    pdf.set_font("Helvetica", "", 10)
-    pdf.multi_cell(0, 6, _latin1(f"Date & Time: {meeting.get('date','')}\nParticipants: {participants}"))
-    pdf.ln(2)
-
-    pdf.section("Summary", _latin1(meeting.get("summary", "") or "N/A"))
-
-    action_text = "\n".join(
-        f"- {i.get('task','')} | Assigned to: {i.get('assigned_to','Unassigned')} | "
-        f"Deadline: {i.get('deadline','TBD')} | Priority: {i.get('priority','Medium')} | "
-        f"{'Done' if i.get('completed') else 'Pending'}"
-        for i in action_items
-    ) or "No action items recorded."
-    pdf.section("Action Items", _latin1(action_text))
-
-    pdf.section("Key Highlights", _latin1("\n".join(f"- {h}" for h in highlights) or "No highlights recorded."))
-    pdf.section("Decisions Made", _latin1("\n".join(f"- {d}" for d in decisions) or "No decisions recorded."))
-    pdf.section("Follow-up Points", _latin1("\n".join(f"- {f}" for f in follow_ups) or "No follow-up points recorded."))
-    pdf.section("Full Transcript", _latin1(meeting.get("transcript", "") or "N/A"))
-
-    buffer = io.BytesIO(pdf.output())
-    buffer.seek(0)
-    return buffer
-
-
-def _latin1(text):
-    """fpdf2's core fonts only support latin-1; strip anything outside that range."""
-    return text.encode("latin-1", "replace").decode("latin-1")
+    doc.save(out_path)
+    return out_path

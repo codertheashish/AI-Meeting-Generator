@@ -1,11 +1,11 @@
 Flask==3.0.3
 Flask-Cors==4.0.1
-Flask-Login==0.6.3
 python-dotenv==1.0.1
 requests==2.32.3
-psycopg2-binary==2.9.9
-mutagen==1.47.0
+numpy<2.0.0
+openai-whisper==20231117
+torch==2.3.1
+reportlab==4.2.2
 python-docx==1.1.2
-fpdf2==2.7.9
-Werkzeug==3.0.4
-itsdangerous==2.2.0
+Werkzeug==3.0.3
+Authlib==1.7.2

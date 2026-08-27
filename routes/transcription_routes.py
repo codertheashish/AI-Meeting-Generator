@@ -1,143 +1,200 @@
-"""Recording upload, transcription, and AI note-generation endpoints."""
-import traceback
+"""
+transcription_routes.py
+------------------------
+Endpoints covering the record -> upload -> transcribe -> analyze -> generate-notes
+pipeline described in the project spec.
+"""
 
-from flask import Blueprint, current_app, jsonify, request
+import os
+import json
+from flask import Blueprint, request, jsonify, current_app
 
-from extensions import current_user_id
 from models import database as db
-from services import audio_service, whisper_service, ai_service, speaker_service, storage_service
+from services import audio_service, whisper_service, ai_service, speaker_service
 
-transcription_bp = Blueprint("transcription", __name__)
+transcription_bp = Blueprint("transcription_bp", __name__)
+
+
+def _upload_dir():
+    return current_app.config["UPLOAD_FOLDER"]
 
 
 @transcription_bp.route("/api/record", methods=["POST"])
 def save_recording():
     """
-    Accepts a recorded audio blob from the browser's MediaRecorder API
-    (multipart/form-data, field name 'audio') and stores it as a new meeting.
-    The audio itself is uploaded to Vercel Blob storage (see
-    services/audio_service.py) since serverless functions can't share a
-    local disk between this request and the later /api/transcribe request.
+    Accepts a recorded audio blob (multipart/form-data, field name 'audio')
+    from the browser's MediaRecorder and stores it as a new meeting.
     """
     if "audio" not in request.files:
-        return jsonify({"error": "No audio data received."}), 400
+        return jsonify({"success": False, "error": "No audio data received from recorder."}), 400
 
-    title = request.form.get("title", "Recorded Meeting")
+    file_storage = request.files["audio"]
+    title = request.form.get("title", "Live Recording")
+
+    # Recorded blobs are typically webm; accept regardless of validate_upload's
+    # extension whitelist by forcing a safe extension if missing.
+    filename = file_storage.filename or "recording.webm"
+    if "." not in filename:
+        filename = "recording.webm"
+    file_storage.filename = filename
+
     try:
-        blob_url = audio_service.save_upload(request.files["audio"])
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    except RuntimeError as exc:
-        return jsonify({"error": str(exc)}), 502
+        audio_service.validate_upload(file_storage)
+        saved_path = audio_service.save_upload(file_storage, _upload_dir())
+    except audio_service.AudioServiceError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
 
-    meeting_id = db.create_meeting(title=title, audio_file=blob_url, user_id=current_user_id())
-    return jsonify({"meeting_id": meeting_id, "audio_file": blob_url})
+    meeting_id = db.create_meeting(title=title, audio_file=saved_path)
+    db.update_meeting(meeting_id, status="recorded")
+
+    return jsonify({"success": True, "meeting_id": meeting_id, "audio_file": os.path.basename(saved_path)})
 
 
 @transcription_bp.route("/api/upload", methods=["POST"])
-def upload_meeting():
-    """Accepts an uploaded audio/video file (multipart/form-data, field name 'file')."""
+def upload_meeting_file():
+    """Accepts an uploaded audio/video meeting file (multipart/form-data, field 'file')."""
     if "file" not in request.files:
-        return jsonify({"error": "No file part in the request."}), 400
+        return jsonify({"success": False, "error": "No file part in the request."}), 400
 
-    title = request.form.get("title") or request.files["file"].filename
+    file_storage = request.files["file"]
+    title = request.form.get("title") or (file_storage.filename.rsplit(".", 1)[0] if file_storage.filename else "Uploaded Meeting")
+
     try:
-        blob_url = audio_service.save_upload(request.files["file"])
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    except RuntimeError as exc:
-        return jsonify({"error": str(exc)}), 502
+        audio_service.validate_upload(file_storage)
+        saved_path = audio_service.save_upload(file_storage, _upload_dir())
+    except audio_service.AudioServiceError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
 
-    meeting_id = db.create_meeting(title=title, audio_file=blob_url, user_id=current_user_id())
-    return jsonify({"meeting_id": meeting_id, "audio_file": blob_url})
+    meeting_id = db.create_meeting(title=title, audio_file=saved_path)
+    db.update_meeting(meeting_id, status="uploaded")
+
+    return jsonify({"success": True, "meeting_id": meeting_id, "audio_file": os.path.basename(saved_path)})
 
 
 @transcription_bp.route("/api/transcribe", methods=["POST"])
-def transcribe():
+def transcribe_meeting():
     """
-    Body: { "meeting_id": <int> }
-    Downloads the meeting's audio from Blob storage, transcribes it via the
-    hosted Whisper API (no FFmpeg conversion needed - see whisper_service.py),
-    and returns speaker-labeled rows for the live transcription panel.
+    Body JSON: {"meeting_id": int, "speaker_names": ["Sarah","John",...] (optional)}
+    Converts audio -> WAV via FFmpeg, runs local Whisper, labels speakers,
+    stores transcript + duration + speaker stats.
     """
-    data = request.get_json(force=True, silent=True) or {}
+    data = request.get_json(silent=True) or {}
     meeting_id = data.get("meeting_id")
-    meeting = db.get_meeting(meeting_id, user_id=current_user_id()) if meeting_id else None
+    speaker_names = data.get("speaker_names")
+
+    meeting = db.get_meeting(meeting_id) if meeting_id else None
     if not meeting:
-        return jsonify({"error": "Invalid or missing meeting_id."}), 400
-    if not meeting.get("audio_file"):
-        return jsonify({"error": "Audio file not found for this meeting."}), 400
+        return jsonify({"success": False, "error": "Valid meeting_id is required."}), 400
+
+    audio_path = meeting.get("audio_file")
+    if not audio_path or not os.path.exists(audio_path):
+        return jsonify({"success": False, "error": "No audio file found for this meeting."}), 400
 
     try:
-        audio_bytes = storage_service.download_bytes(meeting["audio_file"])
-        duration = audio_service.get_duration_seconds(audio_bytes)
-        filename = meeting["audio_file"].rsplit("/", 1)[-1]
-        result = whisper_service.transcribe_audio(audio_bytes, filename=filename)
+        wav_path = audio_service.convert_to_wav(audio_path, _upload_dir())
+    except audio_service.AudioServiceError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+
+    try:
+        result = whisper_service.transcribe_audio(wav_path)
     except RuntimeError as exc:
-        # Covers: storage download failures, missing/invalid transcription
-        # API key, rate limits, provider errors, and unsupported/silent audio.
-        return jsonify({"error": str(exc)}), 502
-    except Exception:  # noqa: BLE001
-        current_app.logger.error(traceback.format_exc())
-        return jsonify({"error": "Unexpected error during transcription."}), 500
+        return jsonify({"success": False, "error": str(exc)}), 500
 
-    # Speaker identification is optional/best-effort - see speaker_service.py.
-    # The hosted Whisper API does NOT perform diarization; this only detects
-    # explicit "Name: text" labels already present in the transcript, if any.
-    labeled = speaker_service.label_segments_with_speakers(result["segments"])
-    display_rows = speaker_service.format_transcript_for_display(labeled)
-    stats = speaker_service.compute_speaking_stats(labeled)
+    if not result["text"]:
+        return jsonify({"success": False, "error": "Transcription returned empty text. Try a clearer recording."}), 422
 
-    db.update_meeting(meeting_id, transcript=result["text"], duration=round(duration), status="transcribed")
+    labeled_segments = whisper_service.assign_speakers_round_robin(result["segments"], speaker_names)
+    stats = speaker_service.compute_speaker_stats(labeled_segments)
+    duration = audio_service.get_audio_duration_seconds(wav_path)
+
+    db.update_meeting(
+        meeting_id,
+        transcript=result["text"],
+        duration=duration,
+        status="transcribed",
+    )
     db.replace_speakers(meeting_id, stats)
 
     return jsonify({
+        "success": True,
         "meeting_id": meeting_id,
         "transcript": result["text"],
-        "transcript_rows": display_rows,
+        "segments": labeled_segments,
         "speakers": stats,
-        "duration": round(duration),
+        "duration": duration,
+        "language": result["language"],
     })
 
 
 @transcription_bp.route("/api/analyze", methods=["POST"])
+def analyze_meeting():
+    """
+    Body JSON: {"meeting_id": int}
+    Lightweight re-check of the transcript + returns current speaker analytics.
+    Useful for refreshing analytics without re-running full note generation.
+    """
+    data = request.get_json(silent=True) or {}
+    meeting_id = data.get("meeting_id")
+    meeting = db.get_full_meeting(meeting_id) if meeting_id else None
+    if not meeting:
+        return jsonify({"success": False, "error": "Valid meeting_id is required."}), 400
+
+    if not meeting.get("transcript"):
+        return jsonify({"success": False, "error": "This meeting has no transcript yet. Run /api/transcribe first."}), 400
+
+    word_count = len(meeting["transcript"].split())
+    return jsonify({
+        "success": True,
+        "meeting_id": meeting_id,
+        "word_count": word_count,
+        "speakers": meeting["speakers"],
+        "duration": meeting.get("duration", 0),
+    })
+
+
 @transcription_bp.route("/api/generate-notes", methods=["POST"])
 def generate_notes():
     """
-    Body: { "meeting_id": <int> }
-    Sends the stored transcript to the LLM and persists the structured notes.
-    (Both /api/analyze and /api/generate-notes point here since they're the
-    same operation in this implementation.)
+    Body JSON: {"meeting_id": int}
+    Sends the transcript to the LLM (via OpenRouter) and stores the
+    structured notes: summary, action items, highlights, decisions.
     """
-    data = request.get_json(force=True, silent=True) or {}
+    data = request.get_json(silent=True) or {}
     meeting_id = data.get("meeting_id")
-    meeting = db.get_meeting(meeting_id, user_id=current_user_id()) if meeting_id else None
+    meeting = db.get_meeting(meeting_id) if meeting_id else None
     if not meeting:
-        return jsonify({"error": "Invalid or missing meeting_id."}), 400
-    if not meeting.get("transcript"):
-        return jsonify({"error": "This meeting has no transcript yet. Run /api/transcribe first."}), 400
+        return jsonify({"success": False, "error": "Valid meeting_id is required."}), 400
+
+    transcript = meeting.get("transcript")
+    if not transcript:
+        return jsonify({"success": False, "error": "No transcript available. Please transcribe the meeting first."}), 400
 
     try:
-        # This is the only place OpenRouter is called from - all HTTP details
-        # live in services/ai_service.py so the provider can change later
-        # without touching route code.
-        notes = ai_service.generate_meeting_notes(meeting["transcript"])
-    except RuntimeError as exc:
-        # Covers: missing/invalid OPENROUTER_API_KEY, rate limits, model
-        # unavailable, network errors, timeouts, and unparsable AI JSON.
-        return jsonify({"error": str(exc), "retryable": True}), 502
-    except Exception:  # noqa: BLE001
-        current_app.logger.error(traceback.format_exc())
-        return jsonify({"error": "Unexpected error during note generation.", "retryable": True}), 500
+        notes = ai_service.generate_meeting_notes(transcript)
+    except ai_service.AIServiceError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 502
 
     db.update_meeting(
         meeting_id,
         summary=notes["summary"],
-        key_highlights=notes["key_highlights"],
-        decisions=notes["decisions"],
-        follow_up_points=notes["follow_up_points"],
-        status="completed",
+        key_highlights=json.dumps(notes["key_highlights"]),
+        status="notes_generated",
     )
     db.replace_action_items(meeting_id, notes["action_items"])
+    db.replace_decisions(meeting_id, notes["decisions"])
 
-    return jsonify({"meeting": db.get_meeting(meeting_id, user_id=current_user_id())})
+    # If the AI produced speaker names/percentages and we don't already have
+    # diarization-based stats, use the AI's estimate as a fallback only.
+    existing_speakers = db.get_speakers(meeting_id)
+    if not existing_speakers and notes["speakers"]:
+        normalized = [
+            {
+                "name": s.get("name", "Unknown"),
+                "speaking_time": 0,
+                "speaking_percentage": s.get("speaking_percentage", 0),
+            }
+            for s in notes["speakers"]
+        ]
+        db.replace_speakers(meeting_id, normalized)
+
+    return jsonify({"success": True, "meeting": db.get_full_meeting(meeting_id)})

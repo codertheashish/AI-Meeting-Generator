@@ -1,154 +1,143 @@
-"""Export (PDF/DOCX/TXT) and email-sending endpoints.
-
-Downloaded/emailed filenames use the meeting's own title (e.g.
-"Project_Sync_Notes.pdf") instead of a generic "meeting_<id>_notes.pdf" -
-renaming a meeting (PATCH /api/meetings/<id> with {"title": "..."}) changes
-what the exported file is called too.
-
-Files are generated entirely in memory (see services/export_service.py)
-and streamed straight to the client - nothing is written to disk, since
-Vercel's serverless filesystem doesn't support that.
 """
+export_routes.py
+-----------------
+Endpoints for downloading meeting notes as PDF / DOCX / TXT, and for
+emailing the notes via SMTP (credentials read from environment variables).
+"""
+
 import os
 import re
 import smtplib
-import traceback
-from email.message import EmailMessage
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 
-from flask import Blueprint, current_app, jsonify, request, send_file
+from flask import Blueprint, jsonify, send_file, request, current_app
 
-from extensions import current_user_id
 from models import database as db
 from services import export_service
 
-export_bp = Blueprint("export", __name__)
+export_bp = Blueprint("export_bp", __name__)
 
 
-def _get_meeting_or_404(meeting_id):
-    return db.get_meeting(meeting_id, user_id=current_user_id())
+def _safe_filename(title):
+    slug = re.sub(r"[^a-zA-Z0-9-_]+", "_", title.strip()) or "meeting"
+    return slug[:60]
 
 
-def _download_filename(meeting, extension):
-    """Turn a meeting title into a safe, human-readable filename."""
-    title = (meeting.get("title") or "Untitled Meeting").strip()
-    slug = re.sub(r"[^\w\s-]", "", title)          # strip punctuation
-    slug = re.sub(r"[\s]+", "_", slug).strip("_")  # spaces -> underscores
-    slug = slug or "Untitled_Meeting"
-    return f"{slug}_Notes.{extension}"
+def _exports_dir():
+    return current_app.config["EXPORT_FOLDER"]
 
 
 @export_bp.route("/api/export/pdf/<int:meeting_id>", methods=["GET"])
 def export_pdf(meeting_id):
-    meeting = _get_meeting_or_404(meeting_id)
+    meeting = db.get_full_meeting(meeting_id)
     if not meeting:
-        return jsonify({"error": "Meeting not found."}), 404
+        return jsonify({"success": False, "error": "Meeting not found."}), 404
+
+    out_path = os.path.join(_exports_dir(), f"{_safe_filename(meeting['title'])}_{meeting_id}.pdf")
     try:
-        buffer = export_service.export_pdf(meeting)
-    except Exception:  # noqa: BLE001
-        current_app.logger.error(traceback.format_exc())
-        return jsonify({"error": "Failed to generate PDF."}), 500
-    return send_file(buffer, mimetype="application/pdf", as_attachment=True,
-                      download_name=_download_filename(meeting, "pdf"))
+        export_service.export_pdf(meeting, out_path)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"success": False, "error": f"PDF export failed: {exc}"}), 500
+
+    return send_file(out_path, as_attachment=True, download_name=os.path.basename(out_path))
 
 
 @export_bp.route("/api/export/docx/<int:meeting_id>", methods=["GET"])
 def export_docx(meeting_id):
-    meeting = _get_meeting_or_404(meeting_id)
+    meeting = db.get_full_meeting(meeting_id)
     if not meeting:
-        return jsonify({"error": "Meeting not found."}), 404
+        return jsonify({"success": False, "error": "Meeting not found."}), 404
+
+    out_path = os.path.join(_exports_dir(), f"{_safe_filename(meeting['title'])}_{meeting_id}.docx")
     try:
-        buffer = export_service.export_docx(meeting)
-    except Exception:  # noqa: BLE001
-        current_app.logger.error(traceback.format_exc())
-        return jsonify({"error": "Failed to generate DOCX."}), 500
-    return send_file(
-        buffer,
-        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        as_attachment=True, download_name=_download_filename(meeting, "docx"),
-    )
+        export_service.export_docx(meeting, out_path)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"success": False, "error": f"DOCX export failed: {exc}"}), 500
+
+    return send_file(out_path, as_attachment=True, download_name=os.path.basename(out_path))
 
 
 @export_bp.route("/api/export/txt/<int:meeting_id>", methods=["GET"])
 def export_txt(meeting_id):
-    meeting = _get_meeting_or_404(meeting_id)
+    meeting = db.get_full_meeting(meeting_id)
     if not meeting:
-        return jsonify({"error": "Meeting not found."}), 404
+        return jsonify({"success": False, "error": "Meeting not found."}), 404
+
+    out_path = os.path.join(_exports_dir(), f"{_safe_filename(meeting['title'])}_{meeting_id}.txt")
     try:
-        buffer = export_service.export_txt(meeting)
-    except Exception:  # noqa: BLE001
-        current_app.logger.error(traceback.format_exc())
-        return jsonify({"error": "Failed to generate TXT."}), 500
-    return send_file(buffer, mimetype="text/plain", as_attachment=True,
-                      download_name=_download_filename(meeting, "txt"))
+        export_service.export_txt(meeting, out_path)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"success": False, "error": f"TXT export failed: {exc}"}), 500
+
+    return send_file(out_path, as_attachment=True, download_name=os.path.basename(out_path))
 
 
 @export_bp.route("/api/email", methods=["POST"])
-def send_email():
+def email_notes():
     """
-    Body: { "meeting_id": <int>, "to": "someone@example.com", "format": "pdf"|"docx"|"txt" }
-    Sends the meeting notes as an email attachment via SMTP.
-    Credentials are read from environment variables - never hardcoded.
+    Body JSON: {"meeting_id": int, "to": "someone@example.com", "message": "optional custom body"}
+    Sends the meeting notes as a PDF attachment via SMTP.
+    Credentials are read only from environment variables - never hardcoded.
     """
-    data = request.get_json(force=True, silent=True) or {}
+    data = request.get_json(silent=True) or {}
     meeting_id = data.get("meeting_id")
     to_email = data.get("to")
-    fmt = data.get("format", "pdf")
 
     if not meeting_id or not to_email:
-        return jsonify({"error": "meeting_id and 'to' email address are required."}), 400
+        return jsonify({"success": False, "error": "'meeting_id' and 'to' are required."}), 400
 
-    meeting = _get_meeting_or_404(meeting_id)
+    meeting = db.get_full_meeting(meeting_id)
     if not meeting:
-        return jsonify({"error": "Meeting not found."}), 404
+        return jsonify({"success": False, "error": "Meeting not found."}), 404
 
+    mail_server = os.getenv("MAIL_SERVER")
+    mail_port = int(os.getenv("MAIL_PORT", "587"))
     mail_username = os.getenv("MAIL_USERNAME")
     mail_password = os.getenv("MAIL_PASSWORD")
-    mail_server = os.getenv("MAIL_SERVER", "smtp.gmail.com")
-    mail_port = int(os.getenv("MAIL_PORT", "587"))
-    sender = os.getenv("MAIL_DEFAULT_SENDER", mail_username)
+    mail_sender = os.getenv("MAIL_DEFAULT_SENDER", mail_username)
+    use_tls = os.getenv("MAIL_USE_TLS", "True").lower() == "true"
 
-    if not mail_username or not mail_password:
-        return jsonify({"error": "Email is not configured. Set MAIL_USERNAME and MAIL_PASSWORD in your environment variables."}), 500
+    if not all([mail_server, mail_username, mail_password]):
+        return jsonify({
+            "success": False,
+            "error": "Email is not configured. Set MAIL_SERVER, MAIL_USERNAME and MAIL_PASSWORD in your .env file.",
+        }), 400
+
+    # Build the PDF attachment
+    pdf_path = os.path.join(_exports_dir(), f"{_safe_filename(meeting['title'])}_{meeting_id}.pdf")
+    try:
+        export_service.export_pdf(meeting, pdf_path)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"success": False, "error": f"Could not prepare PDF attachment: {exc}"}), 500
+
+    subject = data.get("subject") or f"Meeting Notes - {meeting['title']}"
+    body = data.get("message") or (
+        f"Hello Team,\n\nPlease find the meeting notes for \"{meeting['title']}\" attached.\n\n"
+        f"Thanks,\nAI Meeting Generator"
+    )
+
+    msg = MIMEMultipart()
+    msg["From"] = mail_sender
+    msg["To"] = to_email
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
+
+    with open(pdf_path, "rb") as f:
+        part = MIMEApplication(f.read(), _subtype="pdf")
+        part.add_header("Content-Disposition", "attachment", filename=os.path.basename(pdf_path))
+        msg.attach(part)
 
     try:
-        exporters = {"pdf": export_service.export_pdf, "docx": export_service.export_docx, "txt": export_service.export_txt}
-        if fmt not in exporters:
-            return jsonify({"error": "format must be one of: pdf, docx, txt"}), 400
-        buffer = exporters[fmt](meeting)
-        attachment_filename = _download_filename(meeting, fmt)
-
-        msg = EmailMessage()
-        msg["Subject"] = f"Meeting Notes - {meeting.get('title', 'Meeting')}"
-        msg["From"] = sender
-        msg["To"] = to_email
-        msg.set_content(
-            f"Hello,\n\nPlease find attached the meeting notes for "
-            f"\"{meeting.get('title','')}\" held on {meeting.get('date','')}.\n\n"
-            f"Summary:\n{meeting.get('summary','')}\n\n"
-            f"Thanks,\nAI Meeting Notes Generator"
-        )
-
-        file_data = buffer.read()
-        mime_map = {"pdf": ("application", "pdf"), "docx": ("application", "vnd.openxmlformats-officedocument.wordprocessingml.document"), "txt": ("text", "plain")}
-        maintype, subtype = mime_map[fmt]
-        msg.add_attachment(file_data, maintype=maintype, subtype=subtype, filename=attachment_filename)
-
         with smtplib.SMTP(mail_server, mail_port, timeout=30) as server:
-            server.starttls()
+            if use_tls:
+                server.starttls()
             server.login(mail_username, mail_password)
-            server.send_message(msg)
-
-    except smtplib.SMTPAuthenticationError as exc:
-        current_app.logger.error(traceback.format_exc())
-        return jsonify({
-            "error": "Gmail rejected the login credentials. If you're using Gmail, you need an "
-                     "App Password (not your normal password) - see "
-                     "https://support.google.com/accounts/answer/185833"
-        }), 502
+            server.sendmail(mail_sender, [to_email], msg.as_string())
     except smtplib.SMTPException as exc:
-        return jsonify({"error": f"Email failed to send: {exc}"}), 502
-    except Exception:  # noqa: BLE001
-        current_app.logger.error(traceback.format_exc())
-        return jsonify({"error": "Unexpected error while sending email."}), 500
+        return jsonify({"success": False, "error": f"Failed to send email: {exc}"}), 502
+    except OSError as exc:
+        return jsonify({"success": False, "error": f"Could not connect to mail server: {exc}"}), 502
 
-    return jsonify({"success": True, "sent_to": to_email})
+    return jsonify({"success": True, "message": f"Notes emailed to {to_email}."})
