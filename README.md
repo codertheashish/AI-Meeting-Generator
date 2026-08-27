@@ -10,7 +10,7 @@ exports notes as PDF / DOCX / TXT or emails them directly.
 ## 🤖 Demo :
 
 ```bash
-https://codertheashish.github.io/AI-Meeting-Generator/
+https://ai-meeting-generator.onrender.com
 ```
 
 ---
@@ -203,3 +203,6 @@ Then open **http://127.0.0.1:5000** in your browser.
 ---
 
 ⭐ If you like this portfolio, don't forget to give it a star on my GitHub account.
+
+
+
